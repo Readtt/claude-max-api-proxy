@@ -241,3 +241,5 @@ export default claudeCodeCliPlugin;
 export { startServer, stopServer, getServer } from "./server/index.js";
 export { ClaudeSubprocess, verifyClaude, verifyAuth } from "./subprocess/manager.js";
 export { sessionManager } from "./session/manager.js";
+export { usageTracker } from "./usage/tracker.js";
+export type { UsageSummary, RequestRecord } from "./usage/tracker.js";

@@ -6,7 +6,8 @@
 
 import express, { Express, Request, Response, NextFunction } from "express";
 import { createServer, Server } from "http";
-import { handleChatCompletions, handleModels, handleHealth } from "./routes.js";
+import { handleChatCompletions, handleModels, handleHealth, handleUsage, handleUsageRecent } from "./routes.js";
+import { initAuth, authMiddleware } from "./auth.js";
 
 export interface ServerConfig {
   port: number;
@@ -20,6 +21,12 @@ let serverInstance: Server | null = null;
  */
 function createApp(): Express {
   const app = express();
+
+  // Initialize auth
+  const authStatus = initAuth();
+  if (authStatus.enabled) {
+    console.log(`[Server] API key auth enabled (${authStatus.keyCount} key(s))`);
+  }
 
   // Middleware
   app.use(express.json({ limit: "10mb" }));
@@ -45,10 +52,15 @@ function createApp(): Express {
     res.sendStatus(200);
   });
 
+  // Auth middleware (skips /health automatically)
+  app.use(authMiddleware);
+
   // Routes
   app.get("/health", handleHealth);
   app.get("/v1/models", handleModels);
   app.post("/v1/chat/completions", handleChatCompletions);
+  app.get("/v1/usage", handleUsage);
+  app.get("/v1/usage/recent", handleUsageRecent);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
@@ -103,6 +115,7 @@ export async function startServer(config: ServerConfig): Promise<Server> {
     serverInstance.listen(port, host, () => {
       console.log(`[Server] Claude Code CLI provider running at http://${host}:${port}`);
       console.log(`[Server] OpenAI-compatible endpoint: http://${host}:${port}/v1/chat/completions`);
+      console.log(`[Server] Usage dashboard: http://${host}:${port}/v1/usage`);
       resolve(serverInstance!);
     });
   });

@@ -14,6 +14,8 @@ import {
 } from "../adapter/cli-to-openai.js";
 import type { OpenAIChatRequest } from "../types/openai.js";
 import type { ClaudeCliAssistant, ClaudeCliResult, ClaudeCliStreamEvent } from "../types/claude-cli.js";
+import { usageTracker } from "../usage/tracker.js";
+import { isAuthEnabled } from "./auth.js";
 
 /**
  * Handle POST /v1/chat/completions
@@ -28,6 +30,7 @@ export async function handleChatCompletions(
   const body = req.body as OpenAIChatRequest;
   const stream = body.stream === true;
   const requestedModel = body.model || "claude-opus-4";
+  const startTime = Date.now();
 
   try {
     // Validate request
@@ -47,13 +50,22 @@ export async function handleChatCompletions(
     const subprocess = new ClaudeSubprocess();
 
     if (stream) {
-      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel);
+      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime);
     } else {
-      await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel);
+      await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel, startTime);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[handleChatCompletions] Error:", message);
+
+    usageTracker.record({
+      model: requestedModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: Date.now() - startTime,
+      stream,
+      success: false,
+    });
 
     if (!res.headersSent) {
       res.status(500).json({
@@ -80,7 +92,8 @@ async function handleStreamingResponse(
   subprocess: ClaudeSubprocess,
   cliInput: ReturnType<typeof openaiToCli>,
   requestId: string,
-  requestedModel: string
+  requestedModel: string,
+  startTime: number
 ): Promise<void> {
   // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -137,8 +150,21 @@ async function handleStreamingResponse(
       // We use requestedModel instead of CLI-returned model
     });
 
-    subprocess.on("result", (_result: ClaudeCliResult) => {
+    subprocess.on("result", (result: ClaudeCliResult) => {
       isComplete = true;
+
+      // Track usage
+      usageTracker.record({
+        model: requestedModel,
+        inputTokens: result.usage?.input_tokens || 0,
+        outputTokens: result.usage?.output_tokens || 0,
+        cacheReadTokens: result.usage?.cache_read_input_tokens || 0,
+        cacheWriteTokens: result.usage?.cache_creation_input_tokens || 0,
+        durationMs: Date.now() - startTime,
+        stream: true,
+        success: true,
+      });
+
       if (!res.writableEnded) {
         // Send final done chunk with finish_reason
         const doneChunk = createDoneChunk(requestId, lastModel);
@@ -151,6 +177,16 @@ async function handleStreamingResponse(
 
     subprocess.on("error", (error: Error) => {
       console.error("[Streaming] Error:", error.message);
+
+      usageTracker.record({
+        model: requestedModel,
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: Date.now() - startTime,
+        stream: true,
+        success: false,
+      });
+
       if (!res.writableEnded) {
         res.write(
           `data: ${JSON.stringify({
@@ -196,7 +232,8 @@ async function handleNonStreamingResponse(
   subprocess: ClaudeSubprocess,
   cliInput: ReturnType<typeof openaiToCli>,
   requestId: string,
-  requestedModel: string
+  requestedModel: string,
+  startTime: number
 ): Promise<void> {
   return new Promise((resolve) => {
     let finalResult: ClaudeCliResult | null = null;
@@ -207,6 +244,16 @@ async function handleNonStreamingResponse(
 
     subprocess.on("error", (error: Error) => {
       console.error("[NonStreaming] Error:", error.message);
+
+      usageTracker.record({
+        model: requestedModel,
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: Date.now() - startTime,
+        stream: false,
+        success: false,
+      });
+
       res.status(500).json({
         error: {
           message: error.message,
@@ -219,8 +266,29 @@ async function handleNonStreamingResponse(
 
     subprocess.on("close", (code: number | null) => {
       if (finalResult) {
+        // Track usage
+        usageTracker.record({
+          model: requestedModel,
+          inputTokens: finalResult.usage?.input_tokens || 0,
+          outputTokens: finalResult.usage?.output_tokens || 0,
+          cacheReadTokens: finalResult.usage?.cache_read_input_tokens || 0,
+          cacheWriteTokens: finalResult.usage?.cache_creation_input_tokens || 0,
+          durationMs: Date.now() - startTime,
+          stream: false,
+          success: true,
+        });
+
         res.json(cliResultToOpenai(finalResult, requestId, requestedModel));
       } else if (!res.headersSent) {
+        usageTracker.record({
+          model: requestedModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          durationMs: Date.now() - startTime,
+          stream: false,
+          success: false,
+        });
+
         res.status(500).json({
           error: {
             message: `Claude CLI exited with code ${code} without response`,
@@ -283,14 +351,53 @@ export function handleModels(_req: Request, res: Response): void {
 }
 
 /**
+ * Handle GET /v1/usage
+ *
+ * Returns usage statistics and estimated cost savings
+ */
+export function handleUsage(req: Request, res: Response): void {
+  const since = req.query.since ? parseInt(req.query.since as string, 10) : undefined;
+  const summary = usageTracker.getSummary(since);
+
+  res.json({
+    ...summary,
+    maxSubscriptionCostUsd: 200,
+    note: "estimatedApiCostSavedUsd shows what these requests would have cost via Anthropic API",
+  });
+}
+
+/**
+ * Handle GET /v1/usage/recent
+ *
+ * Returns recent request records
+ */
+export function handleUsageRecent(req: Request, res: Response): void {
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+  const records = usageTracker.getRecent(limit);
+
+  res.json({
+    object: "list",
+    data: records,
+  });
+}
+
+/**
  * Handle GET /health
  *
  * Health check endpoint
  */
 export function handleHealth(_req: Request, res: Response): void {
+  const summary = usageTracker.getSummary();
+
   res.json({
     status: "ok",
     provider: "claude-code-cli",
+    version: "1.2.0",
+    auth: isAuthEnabled() ? "enabled" : "disabled",
+    usage: {
+      totalRequests: summary.totalRequests,
+      estimatedSavingsUsd: summary.estimatedApiCostSavedUsd,
+    },
     timestamp: new Date().toISOString(),
   });
 }
