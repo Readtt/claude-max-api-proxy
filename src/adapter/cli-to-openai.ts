@@ -21,7 +21,8 @@ export function extractTextContent(message: ClaudeCliAssistant): string {
 export function cliToOpenaiChunk(
   message: ClaudeCliAssistant,
   requestId: string,
-  isFirst: boolean = false
+  isFirst: boolean = false,
+  requestedModel?: string
 ): OpenAIChatChunk {
   const text = extractTextContent(message);
 
@@ -29,7 +30,7 @@ export function cliToOpenaiChunk(
     id: `chatcmpl-${requestId}`,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: normalizeModelName(message.message.model),
+    model: requestedModel || normalizeModelName(message.message.model),
     choices: [
       {
         index: 0,
@@ -67,12 +68,13 @@ export function createDoneChunk(requestId: string, model: string): OpenAIChatChu
  */
 export function cliResultToOpenai(
   result: ClaudeCliResult,
-  requestId: string
+  requestId: string,
+  requestedModel?: string
 ): OpenAIChatResponse {
-  // Get model from modelUsage or default
-  const modelName = result.modelUsage
+  // Use the requested model so the gateway trusts the response
+  const modelName = requestedModel || (result.modelUsage
     ? Object.keys(result.modelUsage)[0]
-    : "claude-sonnet-4";
+    : "claude-sonnet-4");
 
   return {
     id: `chatcmpl-${requestId}`,

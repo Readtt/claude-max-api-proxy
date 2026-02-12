@@ -34,7 +34,7 @@ export interface SubprocessEvents {
   raw: (line: string) => void;
 }
 
-const DEFAULT_TIMEOUT = 300000; // 5 minutes
+const DEFAULT_TIMEOUT = 600000; // 10 minutes
 
 export class ClaudeSubprocess extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -136,7 +136,8 @@ export class ClaudeSubprocess extends EventEmitter {
       "--include-partial-messages", // Enable streaming chunks
       "--model",
       options.model, // Model alias (opus/sonnet/haiku)
-      "--no-session-persistence", // Don't save sessions
+      "--no-session-persistence",
+      "--dangerously-skip-permissions", // Don't save sessions
       prompt, // Pass prompt as argument (more reliable than stdin)
     ];
 

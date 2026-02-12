@@ -2,7 +2,25 @@
  * Converts OpenAI chat request format to Claude CLI input
  */
 
-import type { OpenAIChatRequest } from "../types/openai.js";
+import type { OpenAIChatRequest, OpenAIContentPart } from "../types/openai.js";
+
+/**
+ * Extract text from message content which can be either a string
+ * or an array of content parts (OpenAI format).
+ */
+function extractText(content: string | OpenAIContentPart[]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part.type === "text" && part.text)
+      .map((part) => part.text!)
+      .join("\n");
+  }
+  // Fallback: try to stringify
+  return String(content);
+}
 
 export type ClaudeModel = "opus" | "sonnet" | "haiku";
 
@@ -15,12 +33,24 @@ export interface CliInput {
 const MODEL_MAP: Record<string, ClaudeModel> = {
   // Direct model names
   "claude-opus-4": "opus",
+  "claude-opus-4-6": "opus",
   "claude-sonnet-4": "sonnet",
   "claude-haiku-4": "haiku",
   // With provider prefix
   "claude-code-cli/claude-opus-4": "opus",
+  "claude-code-cli/claude-opus-4-6": "opus",
   "claude-code-cli/claude-sonnet-4": "sonnet",
   "claude-code-cli/claude-haiku-4": "haiku",
+  // Anthropic-style model IDs (used by OpenClaw)
+  "anthropic/claude-opus-4-6": "opus",
+  "anthropic/claude-opus-4": "opus",
+  "anthropic/claude-sonnet-4": "sonnet",
+  "anthropic/claude-haiku-4": "haiku",
+  // Claude Max provider prefix (used by OpenClaw)
+  "claude-max/claude-opus-4-6": "opus",
+  "claude-max/claude-opus-4": "opus",
+  "claude-max/claude-sonnet-4": "sonnet",
+  "claude-max/claude-haiku-4": "haiku",
   // Aliases
   "opus": "opus",
   "sonnet": "sonnet",
@@ -56,20 +86,21 @@ export function messagesToPrompt(messages: OpenAIChatRequest["messages"]): strin
   const parts: string[] = [];
 
   for (const msg of messages) {
+    const text = extractText(msg.content);
     switch (msg.role) {
       case "system":
         // System messages become context instructions
-        parts.push(`<system>\n${msg.content}\n</system>\n`);
+        parts.push(`<system>\n${text}\n</system>\n`);
         break;
 
       case "user":
         // User messages are the main prompt
-        parts.push(msg.content);
+        parts.push(text);
         break;
 
       case "assistant":
         // Previous assistant responses for context
-        parts.push(`<previous_response>\n${msg.content}\n</previous_response>\n`);
+        parts.push(`<previous_response>\n${text}\n</previous_response>\n`);
         break;
     }
   }

@@ -27,6 +27,7 @@ export async function handleChatCompletions(
   const requestId = uuidv4().replace(/-/g, "").slice(0, 24);
   const body = req.body as OpenAIChatRequest;
   const stream = body.stream === true;
+  const requestedModel = body.model || "claude-opus-4";
 
   try {
     // Validate request
@@ -46,9 +47,9 @@ export async function handleChatCompletions(
     const subprocess = new ClaudeSubprocess();
 
     if (stream) {
-      await handleStreamingResponse(req, res, subprocess, cliInput, requestId);
+      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel);
     } else {
-      await handleNonStreamingResponse(res, subprocess, cliInput, requestId);
+      await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -78,7 +79,8 @@ async function handleStreamingResponse(
   res: Response,
   subprocess: ClaudeSubprocess,
   cliInput: ReturnType<typeof openaiToCli>,
-  requestId: string
+  requestId: string,
+  requestedModel: string
 ): Promise<void> {
   // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -95,7 +97,7 @@ async function handleStreamingResponse(
 
   return new Promise<void>((resolve, reject) => {
     let isFirst = true;
-    let lastModel = "claude-sonnet-4";
+    let lastModel = requestedModel;
     let isComplete = false;
 
     // Handle actual client disconnect (response stream closed)
@@ -115,7 +117,7 @@ async function handleStreamingResponse(
           id: `chatcmpl-${requestId}`,
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
-          model: lastModel,
+          model: requestedModel,
           choices: [{
             index: 0,
             delta: {
@@ -130,9 +132,9 @@ async function handleStreamingResponse(
       }
     });
 
-    // Handle final assistant message (for model name)
-    subprocess.on("assistant", (message: ClaudeCliAssistant) => {
-      lastModel = message.message.model;
+    // Handle final assistant message
+    subprocess.on("assistant", (_message: ClaudeCliAssistant) => {
+      // We use requestedModel instead of CLI-returned model
     });
 
     subprocess.on("result", (_result: ClaudeCliResult) => {
@@ -193,7 +195,8 @@ async function handleNonStreamingResponse(
   res: Response,
   subprocess: ClaudeSubprocess,
   cliInput: ReturnType<typeof openaiToCli>,
-  requestId: string
+  requestId: string,
+  requestedModel: string
 ): Promise<void> {
   return new Promise((resolve) => {
     let finalResult: ClaudeCliResult | null = null;
@@ -216,7 +219,7 @@ async function handleNonStreamingResponse(
 
     subprocess.on("close", (code: number | null) => {
       if (finalResult) {
-        res.json(cliResultToOpenai(finalResult, requestId));
+        res.json(cliResultToOpenai(finalResult, requestId, requestedModel));
       } else if (!res.headersSent) {
         res.status(500).json({
           error: {

@@ -114,9 +114,12 @@ curl -N -X POST http://localhost:3456/v1/chat/completions \
 
 | Model ID | Maps To |
 |----------|---------|
+| `claude-opus-4-6` | Claude Opus 4.6 |
 | `claude-opus-4` | Claude Opus 4.5 |
 | `claude-sonnet-4` | Claude Sonnet 4 |
 | `claude-haiku-4` | Claude Haiku 4 |
+
+Provider-prefixed model IDs are also supported (e.g., `anthropic/claude-opus-4-6`, `claude-max/claude-opus-4-6`).
 
 ## Configuration with Popular Tools
 
