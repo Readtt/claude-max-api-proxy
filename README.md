@@ -238,6 +238,12 @@ src/
 - All auth handled by Claude CLI's secure keychain
 - Optional API key auth for shared deployments
 
+## Important Disclaimer
+
+This proxy uses the official Claude Code CLI (`claude --print`) as a subprocess. It does **not** extract OAuth tokens, reverse-engineer private APIs, or bypass authentication — it simply wraps the CLI you already have installed.
+
+That said, please review [Anthropic's Terms of Service](https://www.anthropic.com/terms) before using this tool. Anthropic's policies on third-party tooling may change. Use at your own discretion and risk.
+
 ## Contributing
 
 PRs welcome. Please include tests.
