@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { extractModel, messagesToPrompt, openaiToCli } from "./openai-to-cli.js";
+import { extractModel, messagesToPrompt, extractSystemPrompt, openaiToCli } from "./openai-to-cli.js";
 
 describe("extractModel", () => {
   it("maps direct model names", () => {
@@ -38,14 +38,12 @@ describe("messagesToPrompt", () => {
     assert.equal(result, "Hello");
   });
 
-  it("wraps system messages in tags", () => {
+  it("excludes system messages from prompt (handled via --append-system-prompt)", () => {
     const result = messagesToPrompt([
       { role: "system", content: "You are helpful" },
       { role: "user", content: "Hi" },
     ]);
-    assert.ok(result.includes("<system>"));
-    assert.ok(result.includes("You are helpful"));
-    assert.ok(result.includes("</system>"));
+    assert.ok(!result.includes("You are helpful"));
     assert.ok(result.includes("Hi"));
   });
 
@@ -75,6 +73,40 @@ describe("messagesToPrompt", () => {
   });
 });
 
+describe("extractSystemPrompt", () => {
+  it("extracts system messages", () => {
+    const result = extractSystemPrompt([
+      { role: "system", content: "You are helpful" },
+      { role: "user", content: "Hi" },
+    ]);
+    assert.equal(result, "You are helpful");
+  });
+
+  it("concatenates multiple system messages", () => {
+    const result = extractSystemPrompt([
+      { role: "system", content: "Be helpful" },
+      { role: "system", content: "Be concise" },
+      { role: "user", content: "Hi" },
+    ]);
+    assert.equal(result, "Be helpful\nBe concise");
+  });
+
+  it("returns undefined when no system messages", () => {
+    const result = extractSystemPrompt([
+      { role: "user", content: "Hi" },
+    ]);
+    assert.equal(result, undefined);
+  });
+
+  it("handles developer role as system", () => {
+    const result = extractSystemPrompt([
+      { role: "developer", content: "You are an assistant" },
+      { role: "user", content: "Hi" },
+    ]);
+    assert.equal(result, "You are an assistant");
+  });
+});
+
 describe("openaiToCli", () => {
   it("returns prompt and model", () => {
     const result = openaiToCli({
@@ -92,5 +124,17 @@ describe("openaiToCli", () => {
       user: "session-123",
     });
     assert.equal(result.sessionId, "session-123");
+  });
+
+  it("extracts system prompt separately", () => {
+    const result = openaiToCli({
+      model: "claude-opus-4-6",
+      messages: [
+        { role: "system", content: "Be concise" },
+        { role: "user", content: "Hello" },
+      ],
+    });
+    assert.equal(result.systemPrompt, "Be concise");
+    assert.equal(result.prompt, "Hello");
   });
 });

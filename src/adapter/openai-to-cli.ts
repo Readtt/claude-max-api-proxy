@@ -27,6 +27,7 @@ export type ClaudeModel = "opus" | "sonnet" | "haiku";
 export interface CliInput {
   prompt: string;
   model: ClaudeModel;
+  systemPrompt?: string;
   sessionId?: string;
 }
 
@@ -85,10 +86,24 @@ export function extractModel(model: string): ClaudeModel {
 }
 
 /**
+ * Extract system messages from OpenAI messages array.
+ * Returns the concatenated system prompt text, or undefined if none.
+ */
+export function extractSystemPrompt(messages: OpenAIChatRequest["messages"]): string | undefined {
+  const systemParts: string[] = [];
+  for (const msg of messages) {
+    if (msg.role === "system" || msg.role === "developer") {
+      systemParts.push(extractText(msg.content));
+    }
+  }
+  return systemParts.length > 0 ? systemParts.join("\n") : undefined;
+}
+
+/**
  * Convert OpenAI messages array to a single prompt string for Claude CLI
  *
  * Claude Code CLI in --print mode expects a single prompt, not a conversation.
- * We format the messages into a readable format that preserves context.
+ * System messages are extracted separately (passed via --append-system-prompt).
  */
 export function messagesToPrompt(messages: OpenAIChatRequest["messages"]): string {
   const parts: string[] = [];
@@ -97,8 +112,8 @@ export function messagesToPrompt(messages: OpenAIChatRequest["messages"]): strin
     const text = extractText(msg.content);
     switch (msg.role) {
       case "system":
-        // System messages become context instructions
-        parts.push(`<system>\n${text}\n</system>\n`);
+      case "developer":
+        // System messages handled via --append-system-prompt, skip here
         break;
 
       case "user":
@@ -123,6 +138,7 @@ export function openaiToCli(request: OpenAIChatRequest): CliInput {
   return {
     prompt: messagesToPrompt(request.messages),
     model: extractModel(request.model),
+    systemPrompt: extractSystemPrompt(request.messages),
     sessionId: request.user, // Use OpenAI's user field for session mapping
   };
 }
