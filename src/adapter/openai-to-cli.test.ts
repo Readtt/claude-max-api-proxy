@@ -7,7 +7,9 @@ describe("extractModel", () => {
     assert.equal(extractModel("claude-opus-4"), "opus");
     assert.equal(extractModel("claude-opus-4-6"), "opus");
     assert.equal(extractModel("claude-sonnet-4"), "sonnet");
+    assert.equal(extractModel("claude-sonnet-4-5-20250929"), "sonnet");
     assert.equal(extractModel("claude-haiku-4"), "haiku");
+    assert.equal(extractModel("claude-haiku-4-5-20251001"), "haiku");
   });
 
   it("maps provider-prefixed names", () => {
