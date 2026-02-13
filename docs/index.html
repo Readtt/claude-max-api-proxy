@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Max API Proxy — Stop Paying Per Token</title>
+<meta name="description" content="Turn your $200/mo Claude Max subscription into a full OpenAI-compatible API. Drop-in replacement for any OpenAI client.">
+<meta property="og:title" content="Claude Max API Proxy">
+<meta property="og:description" content="Your Claude Max subscription, as an OpenAI API. Stop paying per token.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Claude Max API Proxy">
+<meta name="twitter:description" content="Your Claude Max subscription, as an OpenAI API. Stop paying per token.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #111113;
+    --surface-2: #19191d;
+    --border: #2a2a30;
+    --text: #e8e6e3;
+    --text-dim: #8a8a8e;
+    --accent: #d4ff2b;
+    --accent-dim: #8aab10;
+    --red: #ff4d4d;
+    --green: #2bff6e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* Noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Glow blob */
+  .glow {
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(212, 255, 43, 0.06) 0%, transparent 70%);
+    top: -200px;
+    right: -100px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Nav */
+  nav {
+    padding: 24px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .nav-links a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    margin-left: 28px;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--text); }
+
+  /* Hero */
+  .hero {
+    padding: 100px 0 80px;
+    text-align: center;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    border: 1px solid var(--accent-dim);
+    padding: 6px 16px;
+    border-radius: 100px;
+    margin-bottom: 32px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.2s ease-out forwards;
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(42px, 7vw, 72px);
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.35s ease-out forwards;
+  }
+
+  h1 em {
+    color: var(--accent);
+    font-style: italic;
+  }
+
+  .hero-sub {
+    font-size: 15px;
+    color: var(--text-dim);
+    max-width: 520px;
+    margin: 0 auto 40px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.5s ease-out forwards;
+  }
+
+  .cta-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.65s ease-out forwards;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    padding: 14px 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    border-radius: 6px;
+    letter-spacing: 0.04em;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(212, 255, 43, 0.2);
+  }
+
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 14px 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    letter-spacing: 0.04em;
+    transition: border-color 0.2s;
+  }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+
+  /* Savings ticker */
+  .savings-bar {
+    margin: 60px 0;
+    padding: 20px 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.8s ease-out forwards;
+  }
+
+  .savings-item {
+    text-align: center;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .savings-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .savings-value {
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .savings-value.red { color: var(--red); }
+  .savings-value.green { color: var(--green); }
+  .savings-value.accent { color: var(--accent); }
+
+  .divider-v {
+    width: 1px;
+    height: 40px;
+    background: var(--border);
+  }
+
+  /* Code block */
+  .code-section {
+    margin: 80px 0;
+  }
+
+  .code-section h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    margin-bottom: 8px;
+  }
+
+  .code-section p {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+
+  .code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+
+  .code-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+  .code-dot:nth-child(1) { background: #ff5f56; }
+  .code-dot:nth-child(2) { background: #ffbd2e; }
+  .code-dot:nth-child(3) { background: #27c93f; }
+
+  .code-title {
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  pre {
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+    color: var(--text-dim);
+  }
+
+  pre .comment { color: #555; }
+  pre .cmd { color: var(--accent); }
+  pre .flag { color: #8a8aff; }
+  pre .string { color: #ff8a65; }
+  pre .url { color: #4fc3f7; }
+
+  /* Features grid */
+  .features {
+    margin: 80px 0;
+  }
+
+  .features h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    margin-bottom: 32px;
+    text-align: center;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+  }
+
+  .feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .feature-card:hover {
+    border-color: var(--accent-dim);
+    transform: translateY(-2px);
+  }
+
+  .feature-icon {
+    font-size: 20px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .feature-card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .feature-card p {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  /* Comparison table */
+  .comparison {
+    margin: 80px 0;
+  }
+
+  .comparison h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    margin-bottom: 32px;
+    text-align: center;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr.highlight td {
+    background: rgba(212, 255, 43, 0.04);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  tr.highlight td:first-child { color: var(--accent); }
+
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    background: var(--accent);
+    color: var(--bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* Integrations */
+  .integrations {
+    margin: 80px 0;
+    text-align: center;
+  }
+
+  .integrations h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    margin-bottom: 12px;
+  }
+
+  .integrations > p {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+
+  .integration-logos {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .int-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 28px;
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 600;
+    transition: border-color 0.2s;
+  }
+  .int-item:hover { border-color: var(--accent-dim); }
+
+  /* How it works */
+  .how-it-works {
+    margin: 80px 0;
+    text-align: center;
+  }
+
+  .how-it-works h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    margin-bottom: 40px;
+  }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+
+  .flow-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    text-align: center;
+    min-width: 160px;
+  }
+
+  .flow-step .step-num {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .flow-step .step-label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .flow-step .step-detail {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .flow-arrow {
+    font-size: 18px;
+    color: var(--accent-dim);
+    padding: 0 12px;
+  }
+
+  /* CTA bottom */
+  .bottom-cta {
+    margin: 100px 0 60px;
+    text-align: center;
+    padding: 60px 40px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bottom-cta::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 50% 0%, rgba(212, 255, 43, 0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .bottom-cta h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 36px;
+    font-weight: 400;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .bottom-cta p {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 32px;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+    position: relative;
+  }
+
+  .bottom-cta .cta-row { position: relative; }
+
+  /* Footer */
+  footer {
+    padding: 32px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  footer a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  footer a:hover { color: var(--text); }
+
+  /* Animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    .hero { padding: 60px 0 40px; }
+    .savings-bar { flex-direction: column; text-align: center; }
+    .divider-v { display: none; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); padding: 8px 0; }
+    nav { flex-direction: column; gap: 12px; }
+    .nav-links a:first-child { margin-left: 0; }
+    .bottom-cta { padding: 40px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<div class="container">
+  <nav>
+    <div class="logo">claude-max-api-proxy</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/atalovesyou/claude-max-api-proxy">GitHub</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <span class="hero-tag">Open Source &middot; MIT License</span>
+    <h1>Your Max subscription,<br>as an <em>API</em></h1>
+    <p class="hero-sub">Turn your $200/mo Claude Max into a full OpenAI-compatible API. Any client, any SDK, zero extra cost.</p>
+    <div class="cta-row">
+      <a href="https://github.com/atalovesyou/claude-max-api-proxy" class="btn-primary">View on GitHub</a>
+      <a href="#quickstart" class="btn-secondary">Quick Start &darr;</a>
+    </div>
+  </section>
+
+  <div class="savings-bar">
+    <div class="savings-item">
+      <div class="savings-label">API Pricing (Opus)</div>
+      <div class="savings-value red">~$1,200/mo</div>
+    </div>
+    <div class="divider-v"></div>
+    <div class="savings-item">
+      <div class="savings-label">Claude Max</div>
+      <div class="savings-value">$200/mo</div>
+    </div>
+    <div class="divider-v"></div>
+    <div class="savings-item">
+      <div class="savings-label">This Proxy</div>
+      <div class="savings-value green">+$0</div>
+    </div>
+    <div class="divider-v"></div>
+    <div class="savings-item">
+      <div class="savings-label">You Save</div>
+      <div class="savings-value accent" id="savings-counter">$1,000+</div>
+    </div>
+  </div>
+
+  <section class="how-it-works reveal" id="how">
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-num">Your App</div>
+        <div class="step-label">OpenAI SDK</div>
+        <div class="step-detail">Any client or tool</div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step">
+        <div class="step-num">This Proxy</div>
+        <div class="step-label">localhost:3456</div>
+        <div class="step-detail">Translates to CLI</div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step">
+        <div class="step-num">Claude CLI</div>
+        <div class="step-label">claude --print</div>
+        <div class="step-detail">Official subprocess</div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step">
+        <div class="step-num">Anthropic</div>
+        <div class="step-label">Your Max Plan</div>
+        <div class="step-detail">$200/mo flat</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="code-section reveal" id="quickstart">
+    <h2>Three commands. That's it.</h2>
+    <p>Install, start, use. Works with anything that speaks OpenAI.</p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot"></span>
+        <span class="code-dot"></span>
+        <span class="code-dot"></span>
+        <span class="code-title">terminal</span>
+      </div>
+      <pre><span class="comment"># Install globally</span>
+<span class="cmd">npm</span> install -g claude-max-api-proxy
+
+<span class="comment"># Start the proxy</span>
+<span class="cmd">claude-max-api</span> &
+
+<span class="comment"># Use it with any OpenAI client</span>
+<span class="cmd">curl</span> <span class="url">http://localhost:3456/v1/chat/completions</span> \
+  <span class="flag">-H</span> <span class="string">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="string">'{"model":"claude-opus-4-6","messages":[{"role":"user","content":"Hello!"}]}'</span></pre>
+    </div>
+  </section>
+
+  <section class="features reveal" id="features">
+    <h2>Built for real use</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">//</span>
+        <h3>OpenAI-Compatible</h3>
+        <p>Drop-in replacement. /v1/chat/completions with streaming, tool use, and multi-turn context. Works with Python SDK, Node SDK, curl.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&gt;_</span>
+        <h3>Official CLI</h3>
+        <p>Uses <code>claude --print</code> as a subprocess. No OAuth extraction, no private API scraping. When Anthropic blocked OAuth proxies, we kept working.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">$&nbsp;</span>
+        <h3>Usage Tracking</h3>
+        <p>GET /v1/usage shows tokens used, requests made, and exactly how much you're saving vs API pricing. Watch the ROI in real-time.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">[=]</span>
+        <h3>Streaming</h3>
+        <p>Full SSE streaming support. Real-time token-by-token responses, just like the native OpenAI API.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">***</span>
+        <h3>Team Auth</h3>
+        <p>Optional API key authentication for shared deployments. Set API_KEYS env var, require Bearer tokens from clients.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">{&nbsp;}</span>
+        <h3>All Models</h3>
+        <p>Opus 4.6, Sonnet 4.5, Haiku 4.5 — full model family. Provider-prefixed IDs supported for multi-provider setups.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="comparison reveal" id="pricing">
+    <h2>The math speaks for itself</h2>
+    <div class="code-block">
+      <table>
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>Monthly Cost</th>
+            <th>API Access</th>
+            <th>Third-Party Tools</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Claude API (Opus)</td>
+            <td>$500&ndash;2,000+</td>
+            <td>Full</td>
+            <td>Full</td>
+          </tr>
+          <tr>
+            <td>Claude Max (no proxy)</td>
+            <td>$200</td>
+            <td>CLI only</td>
+            <td>None</td>
+          </tr>
+          <tr class="highlight">
+            <td>Max + This Proxy <span class="badge">Best</span></td>
+            <td>$200</td>
+            <td>Full</td>
+            <td>Full</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="integrations reveal">
+    <h2>Works with everything</h2>
+    <p>Point any OpenAI-compatible client at localhost:3456</p>
+    <div class="integration-logos">
+      <div class="int-item">Continue.dev</div>
+      <div class="int-item">Cursor</div>
+      <div class="int-item">OpenClaw</div>
+      <div class="int-item">Python SDK</div>
+      <div class="int-item">Node SDK</div>
+      <div class="int-item">Any OpenAI Client</div>
+    </div>
+  </section>
+
+  <section class="bottom-cta reveal">
+    <h2>Stop paying per token</h2>
+    <p>You're already paying $200/mo. Get the API access you deserve.</p>
+    <div class="cta-row">
+      <a href="https://github.com/atalovesyou/claude-max-api-proxy" class="btn-primary">Get Started</a>
+      <a href="https://github.com/atalovesyou/claude-max-api-proxy#readme" class="btn-secondary">Read the Docs</a>
+    </div>
+  </section>
+
+  <footer>
+    <span>MIT License &middot; Built by <a href="https://github.com/atalovesyou">@atalovesyou</a></span>
+    <span>
+      <a href="https://github.com/atalovesyou/claude-max-api-proxy">GitHub</a>
+    </span>
+  </footer>
+</div>
+
+<script>
+  // Scroll reveal
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  // Animated savings counter
+  function animateCounter(el, target, prefix, suffix) {
+    let current = 0;
+    const duration = 1500;
+    const step = target / (duration / 16);
+    const timer = setInterval(() => {
+      current += step;
+      if (current >= target) {
+        current = target;
+        clearInterval(timer);
+        el.textContent = prefix + current.toLocaleString() + suffix;
+      } else {
+        el.textContent = prefix + Math.floor(current).toLocaleString() + suffix;
+      }
+    }, 16);
+  }
+
+  const savingsEl = document.getElementById('savings-counter');
+  const savingsObs = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting) {
+      animateCounter(savingsEl, 1000, '$', '+/mo');
+      savingsObs.disconnect();
+    }
+  }, { threshold: 0.5 });
+  savingsObs.observe(savingsEl);
+</script>
+</body>
+</html>
