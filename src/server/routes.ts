@@ -216,6 +216,7 @@ async function handleStreamingResponse(
     // Start the subprocess
     subprocess.start(cliInput.prompt, {
       model: cliInput.model,
+      systemPrompt: cliInput.systemPrompt,
       sessionId: cliInput.sessionId,
     }).catch((err) => {
       console.error("[Streaming] Subprocess start error:", err);
@@ -304,6 +305,7 @@ async function handleNonStreamingResponse(
     subprocess
       .start(cliInput.prompt, {
         model: cliInput.model,
+        systemPrompt: cliInput.systemPrompt,
         sessionId: cliInput.sessionId,
       })
       .catch((error) => {
