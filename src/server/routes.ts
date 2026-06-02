@@ -18,6 +18,21 @@ import { usageTracker } from "../usage/tracker.js";
 import { isAuthEnabled } from "./auth.js";
 
 /**
+ * Build a useful error message when the CLI exits without a response.
+ * Surfaces the CLI's stderr (e.g. "Not logged in · Please run /login") so the
+ * caller sees the real cause instead of a bare exit code.
+ */
+function exitErrorMessage(code: number | null, stderr: string): string {
+  const base = `Claude CLI exited with code ${code} without a response`;
+  const detail = stderr.trim();
+  if (!detail) return base;
+  if (/not logged in|\/login|authenticat/i.test(detail)) {
+    return `Claude CLI is not authenticated. Run \`claude\` once to log in. (CLI: ${detail})`;
+  }
+  return `${base}: ${detail}`;
+}
+
+/**
  * Handle POST /v1/chat/completions
  *
  * Main endpoint for chat requests, supports both streaming and non-streaming
@@ -29,7 +44,7 @@ export async function handleChatCompletions(
   const requestId = uuidv4().replace(/-/g, "").slice(0, 24);
   const body = req.body as OpenAIChatRequest;
   const stream = body.stream === true;
-  const requestedModel = body.model || "claude-opus-4";
+  const requestedModel = body.model || "claude-opus-4-8";
   const startTime = Date.now();
 
   try {
@@ -122,9 +137,11 @@ async function handleStreamingResponse(
       resolve();
     });
 
-    // Handle streaming content deltas
+    // Handle streaming content deltas. Only forward visible text — never
+    // thinking_delta (extended-thinking) content, which has no `.text`.
     subprocess.on("content_delta", (event: ClaudeCliStreamEvent) => {
-      const text = event.event.delta?.text || "";
+      const delta = event.event.delta;
+      const text = delta?.type === "text_delta" ? delta.text || "" : "";
       if (text && !res.writableEnded) {
         const chunk = {
           id: `chatcmpl-${requestId}`,
@@ -202,9 +219,9 @@ async function handleStreamingResponse(
       // Subprocess exited - ensure response is closed
       if (!res.writableEnded) {
         if (code !== 0 && !isComplete) {
-          // Abnormal exit without result - send error
+          // Abnormal exit without result - send error (include stderr if any)
           res.write(`data: ${JSON.stringify({
-            error: { message: `Process exited with code ${code}`, type: "server_error", code: null },
+            error: { message: exitErrorMessage(code, subprocess.getLastStderr()), type: "server_error", code: null },
           })}\n\n`);
         }
         res.write("data: [DONE]\n\n");
@@ -292,7 +309,7 @@ async function handleNonStreamingResponse(
 
         res.status(500).json({
           error: {
-            message: `Claude CLI exited with code ${code} without response`,
+            message: exitErrorMessage(code, subprocess.getLastStderr()),
             type: "server_error",
             code: null,
           },
@@ -327,46 +344,24 @@ async function handleNonStreamingResponse(
  * Returns available models
  */
 export function handleModels(_req: Request, res: Response): void {
+  const created = Math.floor(Date.now() / 1000);
+  const ids = [
+    "claude-opus-4-8",
+    "claude-opus-4",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4",
+    "claude-haiku-4-5-20251001",
+    "claude-haiku-4",
+  ];
+
   res.json({
     object: "list",
-    data: [
-      {
-        id: "claude-opus-4-6",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-      {
-        id: "claude-opus-4",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-      {
-        id: "claude-sonnet-4-5-20250929",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-      {
-        id: "claude-sonnet-4",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-      {
-        id: "claude-haiku-4-5-20251001",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-      {
-        id: "claude-haiku-4",
-        object: "model",
-        owned_by: "anthropic",
-        created: Math.floor(Date.now() / 1000),
-      },
-    ],
+    data: ids.map((id) => ({
+      id,
+      object: "model",
+      owned_by: "anthropic",
+      created,
+    })),
   });
 }
 
@@ -412,7 +407,7 @@ export function handleHealth(_req: Request, res: Response): void {
   res.json({
     status: "ok",
     provider: "claude-code-cli",
-    version: "1.2.1",
+    version: "1.4.0",
     auth: isAuthEnabled() ? "enabled" : "disabled",
     usage: {
       totalRequests: summary.totalRequests,

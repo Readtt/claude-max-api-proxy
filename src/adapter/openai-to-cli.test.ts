@@ -6,8 +6,10 @@ describe("extractModel", () => {
   it("maps direct model names", () => {
     assert.equal(extractModel("claude-opus-4"), "opus");
     assert.equal(extractModel("claude-opus-4-6"), "opus");
+    assert.equal(extractModel("claude-opus-4-8"), "opus");
     assert.equal(extractModel("claude-sonnet-4"), "sonnet");
     assert.equal(extractModel("claude-sonnet-4-5-20250929"), "sonnet");
+    assert.equal(extractModel("claude-sonnet-4-6"), "sonnet");
     assert.equal(extractModel("claude-haiku-4"), "haiku");
     assert.equal(extractModel("claude-haiku-4-5-20251001"), "haiku");
   });
@@ -15,7 +17,8 @@ describe("extractModel", () => {
   it("maps provider-prefixed names", () => {
     assert.equal(extractModel("claude-code-cli/claude-opus-4"), "opus");
     assert.equal(extractModel("anthropic/claude-opus-4-6"), "opus");
-    assert.equal(extractModel("claude-max/claude-sonnet-4"), "sonnet");
+    assert.equal(extractModel("claude-max/claude-sonnet-4-6"), "sonnet");
+    assert.equal(extractModel("claude-max/claude-haiku-4-5-20251001"), "haiku");
   });
 
   it("maps aliases", () => {
@@ -24,9 +27,19 @@ describe("extractModel", () => {
     assert.equal(extractModel("haiku"), "haiku");
   });
 
-  it("defaults to opus for unknown models", () => {
+  it("future-proofs new model names by family keyword", () => {
+    // No code change needed when Anthropic ships new versions
+    assert.equal(extractModel("claude-opus-5"), "opus");
+    assert.equal(extractModel("claude-opus-4-9-20270101"), "opus");
+    assert.equal(extractModel("anthropic/claude-sonnet-5-preview"), "sonnet");
+    assert.equal(extractModel("claude-haiku-5"), "haiku");
+    assert.equal(extractModel("OPUS"), "opus"); // case-insensitive
+  });
+
+  it("defaults to opus for unknown or empty models", () => {
     assert.equal(extractModel("gpt-4o"), "opus");
     assert.equal(extractModel("unknown-model"), "opus");
+    assert.equal(extractModel(""), "opus");
   });
 });
 

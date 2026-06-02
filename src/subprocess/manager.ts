@@ -8,6 +8,8 @@
 import { spawn, ChildProcess } from "child_process";
 import { EventEmitter } from "events";
 import fs from "fs/promises";
+import { mkdirSync } from "fs";
+import os from "os";
 import path from "path";
 import type {
   ClaudeCliMessage,
@@ -37,24 +39,64 @@ export interface SubprocessEvents {
 
 const DEFAULT_TIMEOUT = 600000; // 10 minutes
 
+// Unique-enough suffix for temp system-prompt files (no Date.now needed)
+let promptFileCounter = 0;
+
+// An empty, dedicated working directory for the CLI. Running here (instead of
+// the directory the server happens to be started from) keeps the proxy from
+// auto-discovering a project's CLAUDE.md or files, so responses are consistent
+// no matter where the server runs.
+let isolatedCwd: string | null = null;
+function getIsolatedCwd(): string {
+  if (!isolatedCwd) {
+    isolatedCwd = path.join(os.tmpdir(), "claude-max-api-proxy-cwd");
+    try {
+      mkdirSync(isolatedCwd, { recursive: true });
+    } catch {
+      // Fall back to tmpdir if creation fails
+      isolatedCwd = os.tmpdir();
+    }
+  }
+  return isolatedCwd;
+}
+
 export class ClaudeSubprocess extends EventEmitter {
   private process: ChildProcess | null = null;
   private buffer: string = "";
   private timeoutId: NodeJS.Timeout | null = null;
   private isKilled: boolean = false;
+  private systemPromptFile: string | null = null;
+  private lastStderr: string = "";
 
   /**
-   * Start the Claude CLI subprocess with the given prompt
+   * Start the Claude CLI subprocess with the given prompt.
+   *
+   * Both the prompt and the system prompt are kept OFF the command line:
+   *   - prompt        -> written to the CLI's stdin
+   *   - systemPrompt  -> written to a temp file, passed via --append-system-prompt-file
+   * This avoids E2BIG (Linux/macOS) and the ~32 KB command-line cap (Windows),
+   * which otherwise killed large first messages (e.g. code-review diffs) before
+   * streaming even started.
    */
   async start(prompt: string, options: SubprocessOptions): Promise<void> {
-    const args = this.buildArgs(options);
     const timeout = options.timeout || DEFAULT_TIMEOUT;
+
+    // Write the system prompt to a temp file so it never hits the command line.
+    if (options.systemPrompt) {
+      this.systemPromptFile = path.join(
+        os.tmpdir(),
+        `claude-max-sysprompt-${process.pid}-${++promptFileCounter}.txt`
+      );
+      await fs.writeFile(this.systemPromptFile, options.systemPrompt, "utf8");
+    }
+
+    const args = this.buildArgs(options);
 
     return new Promise((resolve, reject) => {
       try {
         // Use spawn() for security - no shell interpretation
         this.process = spawn("claude", args, {
-          cwd: options.cwd || process.cwd(),
+          cwd: options.cwd || getIsolatedCwd(),
           env: { ...process.env },
           stdio: ["pipe", "pipe", "pipe"],
         });
@@ -71,6 +113,7 @@ export class ClaudeSubprocess extends EventEmitter {
         // Handle spawn errors (e.g., claude not found)
         this.process.on("error", (err) => {
           this.clearTimeout();
+          this.cleanupSystemPromptFile();
           if (err.message.includes("ENOENT")) {
             reject(
               new Error(
@@ -96,10 +139,12 @@ export class ClaudeSubprocess extends EventEmitter {
           this.processBuffer();
         });
 
-        // Capture stderr for debugging
+        // Capture stderr for debugging and for surfacing real errors (e.g.
+        // "Not logged in") to the API client when the CLI exits without output.
         this.process.stderr?.on("data", (chunk: Buffer) => {
           const errorText = chunk.toString().trim();
           if (errorText) {
+            this.lastStderr = errorText.slice(0, 500);
             // Don't emit as error unless it's actually an error
             // Claude CLI may write debug info to stderr
             console.error("[Subprocess stderr]:", errorText.slice(0, 200));
@@ -110,6 +155,7 @@ export class ClaudeSubprocess extends EventEmitter {
         this.process.on("close", (code) => {
           console.error(`[Subprocess] Process closed with code: ${code}`);
           this.clearTimeout();
+          this.cleanupSystemPromptFile();
           // Process any remaining buffer
           if (this.buffer.trim()) {
             this.processBuffer();
@@ -128,7 +174,8 @@ export class ClaudeSubprocess extends EventEmitter {
 
   /**
    * Build CLI arguments array.
-   * Prompt is passed via stdin (not as argument) to avoid E2BIG on large prompts.
+   * The prompt is passed via stdin and the system prompt via a temp file
+   * (--append-system-prompt-file), so neither lands on the command line.
    */
   private buildArgs(options: SubprocessOptions): string[] {
     const args = [
@@ -139,12 +186,18 @@ export class ClaudeSubprocess extends EventEmitter {
       "--include-partial-messages", // Enable streaming chunks
       "--model",
       options.model, // Model alias (opus/sonnet/haiku)
-      "--no-session-persistence",
-      "--dangerously-skip-permissions", // Don't save sessions
+      "--no-session-persistence", // Don't save sessions to disk
+      // --- Isolation: behave as a pure chat API regardless of the host ---
+      "--setting-sources",
+      "", // Load no user/project settings -> no hooks, no CLAUDE.md, no plugins
+      "--disable-slash-commands", // No skills/slash commands
+      "--tools",
+      "", // No built-in tools -> the proxy can never run Bash/Edit on the host
+      "--dangerously-skip-permissions", // Safe: there are no tools to permit
     ];
 
-    if (options.systemPrompt) {
-      args.push("--append-system-prompt", options.systemPrompt);
+    if (this.systemPromptFile) {
+      args.push("--append-system-prompt-file", this.systemPromptFile);
     }
 
     if (options.sessionId) {
@@ -195,12 +248,24 @@ export class ClaudeSubprocess extends EventEmitter {
   }
 
   /**
+   * Delete the temp system-prompt file, if any. Best-effort; ignores errors.
+   */
+  private cleanupSystemPromptFile(): void {
+    const file = this.systemPromptFile;
+    if (file) {
+      this.systemPromptFile = null;
+      fs.unlink(file).catch(() => {});
+    }
+  }
+
+  /**
    * Kill the subprocess
    */
   kill(signal: NodeJS.Signals = "SIGTERM"): void {
     if (!this.isKilled && this.process) {
       this.isKilled = true;
       this.clearTimeout();
+      this.cleanupSystemPromptFile();
       this.process.kill(signal);
     }
   }
@@ -210,6 +275,14 @@ export class ClaudeSubprocess extends EventEmitter {
    */
   isRunning(): boolean {
     return this.process !== null && !this.isKilled && this.process.exitCode === null;
+  }
+
+  /**
+   * Last line(s) the CLI wrote to stderr (trimmed). Useful for turning an
+   * opaque non-zero exit into a meaningful API error.
+   */
+  getLastStderr(): string {
+    return this.lastStderr;
   }
 }
 

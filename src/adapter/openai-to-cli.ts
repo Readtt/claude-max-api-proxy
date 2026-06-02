@@ -31,57 +31,20 @@ export interface CliInput {
   sessionId?: string;
 }
 
-const MODEL_MAP: Record<string, ClaudeModel> = {
-  // Direct model names
-  "claude-opus-4": "opus",
-  "claude-opus-4-6": "opus",
-  "claude-sonnet-4": "sonnet",
-  "claude-sonnet-4-5-20250929": "sonnet",
-  "claude-haiku-4": "haiku",
-  "claude-haiku-4-5-20251001": "haiku",
-  // With provider prefix
-  "claude-code-cli/claude-opus-4": "opus",
-  "claude-code-cli/claude-opus-4-6": "opus",
-  "claude-code-cli/claude-sonnet-4": "sonnet",
-  "claude-code-cli/claude-sonnet-4-5-20250929": "sonnet",
-  "claude-code-cli/claude-haiku-4": "haiku",
-  "claude-code-cli/claude-haiku-4-5-20251001": "haiku",
-  // Anthropic-style model IDs (used by OpenClaw)
-  "anthropic/claude-opus-4-6": "opus",
-  "anthropic/claude-opus-4": "opus",
-  "anthropic/claude-sonnet-4": "sonnet",
-  "anthropic/claude-sonnet-4-5-20250929": "sonnet",
-  "anthropic/claude-haiku-4": "haiku",
-  "anthropic/claude-haiku-4-5-20251001": "haiku",
-  // Claude Max provider prefix (used by OpenClaw)
-  "claude-max/claude-opus-4-6": "opus",
-  "claude-max/claude-opus-4": "opus",
-  "claude-max/claude-sonnet-4": "sonnet",
-  "claude-max/claude-sonnet-4-5-20250929": "sonnet",
-  "claude-max/claude-haiku-4": "haiku",
-  "claude-max/claude-haiku-4-5-20251001": "haiku",
-  // Aliases
-  "opus": "opus",
-  "sonnet": "sonnet",
-  "haiku": "haiku",
-};
-
 /**
- * Extract Claude model alias from request model string
+ * Map any requested model string to a Claude CLI alias (opus/sonnet/haiku).
+ *
+ * Detection is by family keyword, not an explicit list, so new models work
+ * with zero code changes: `claude-opus-4-8`, `anthropic/claude-opus-5`,
+ * `claude-max/opus-next`, or a bare `opus` all resolve to the `opus` alias —
+ * and the CLI alias always points at the latest model in that family.
+ *
+ * Unknown strings default to `opus` (the headline Claude Max model).
  */
 export function extractModel(model: string): ClaudeModel {
-  // Try direct lookup
-  if (MODEL_MAP[model]) {
-    return MODEL_MAP[model];
-  }
-
-  // Try stripping provider prefix
-  const stripped = model.replace(/^claude-code-cli\//, "");
-  if (MODEL_MAP[stripped]) {
-    return MODEL_MAP[stripped];
-  }
-
-  // Default to opus (Claude Max subscription)
+  const m = (model || "").toLowerCase();
+  if (m.includes("haiku")) return "haiku";
+  if (m.includes("sonnet")) return "sonnet";
   return "opus";
 }
 

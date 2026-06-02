@@ -96,8 +96,11 @@ export interface ClaudeCliStreamEvent {
     type: "message_start" | "content_block_start" | "content_block_delta" | "content_block_stop" | "message_delta" | "message_stop";
     index?: number;
     delta?: {
-      type: "text_delta";
-      text: string;
+      // text_delta carries visible output; thinking_delta carries extended
+      // thinking (ignored by the proxy). Other delta types may appear too.
+      type: "text_delta" | "thinking_delta" | string;
+      text?: string;
+      thinking?: string;
     };
     content_block?: {
       type: "text";
