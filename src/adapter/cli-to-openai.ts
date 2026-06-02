@@ -20,48 +20,42 @@ export function extractTextContent(message: ClaudeCliAssistant): string {
 }
 
 /**
- * Convert Claude CLI assistant message to OpenAI streaming chunk
+ * Map the CLI's `stop_reason` to an OpenAI `finish_reason`. Tool calls are
+ * handled separately (the caller sets "tool_calls"); this covers text replies.
  */
-export function cliToOpenaiChunk(
-  message: ClaudeCliAssistant,
-  requestId: string,
-  isFirst: boolean = false,
-  requestedModel?: string
-): OpenAIChatChunk {
-  const text = extractTextContent(message);
-
-  return {
-    id: `chatcmpl-${requestId}`,
-    object: "chat.completion.chunk",
-    created: Math.floor(Date.now() / 1000),
-    model: requestedModel || normalizeModelName(message.message.model),
-    choices: [
-      {
-        index: 0,
-        delta: {
-          role: isFirst ? "assistant" : undefined,
-          content: text,
-        },
-        finish_reason: message.message.stop_reason ? "stop" : null,
-      },
-    ],
-  };
+export function mapFinishReason(
+  stopReason: string | null | undefined
+): "stop" | "length" | "content_filter" {
+  switch (stopReason) {
+    case "max_tokens":
+      return "length";
+    case "refusal":
+      return "content_filter";
+    // end_turn, stop_sequence, null, or anything unexpected → a normal stop.
+    default:
+      return "stop";
+  }
 }
 
 /**
- * Create a final "done" chunk for streaming
+ * Create a final "done" chunk for streaming. The model is echoed verbatim so it
+ * matches what the client requested (and the earlier content chunks).
  */
-export function createDoneChunk(requestId: string, model: string): OpenAIChatChunk {
+export function createDoneChunk(
+  requestId: string,
+  model: string,
+  finishReason: "stop" | "length" | "content_filter" | "tool_calls" = "stop"
+): OpenAIChatChunk {
   return {
     id: `chatcmpl-${requestId}`,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: normalizeModelName(model),
+    model,
     choices: [
       {
         index: 0,
         delta: {},
-        finish_reason: "stop",
+        finish_reason: finishReason,
       },
     ],
   };
@@ -80,10 +74,13 @@ export function cliResultToOpenai(
   requestedModel?: string,
   toolCalls?: OpenAIToolCall[]
 ): OpenAIChatResponse {
-  // Use the requested model so the gateway trusts the response
-  const modelName = requestedModel || (result.modelUsage
-    ? Object.keys(result.modelUsage)[0]
-    : "claude-sonnet-4");
+  // Echo the requested model verbatim so the response matches the request.
+  // Only fall back to the CLI-reported model (normalized) when none was given.
+  const modelName = requestedModel
+    ? requestedModel
+    : normalizeModelName(
+        result.modelUsage ? Object.keys(result.modelUsage)[0] : "claude-sonnet-4"
+      );
 
   const hasToolCalls = !!toolCalls && toolCalls.length > 0;
 
@@ -91,14 +88,16 @@ export function cliResultToOpenai(
     id: `chatcmpl-${requestId}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
-    model: normalizeModelName(modelName),
+    model: modelName,
     choices: [
       {
         index: 0,
         message: hasToolCalls
           ? { role: "assistant", content: null, tool_calls: toolCalls }
           : { role: "assistant", content: result.result },
-        finish_reason: hasToolCalls ? "tool_calls" : "stop",
+        finish_reason: hasToolCalls
+          ? "tool_calls"
+          : mapFinishReason(result.stop_reason),
       },
     ],
     usage: {

@@ -69,6 +69,8 @@ export interface ClaudeCliResult {
   duration_api_ms: number;
   num_turns: number;
   result: string;
+  /** Why generation stopped: end_turn, max_tokens, stop_sequence, tool_use, … */
+  stop_reason?: string | null;
   session_id: string;
   total_cost_usd: number;
   usage: {
