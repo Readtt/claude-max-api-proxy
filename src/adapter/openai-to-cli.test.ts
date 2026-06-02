@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { extractModel, messagesToPrompt, extractSystemPrompt, openaiToCli } from "./openai-to-cli.js";
+import {
+  extractModel,
+  messagesToPrompt,
+  extractSystemPrompt,
+  extractImages,
+  openaiToCli,
+} from "./openai-to-cli.js";
 
 describe("extractModel", () => {
   it("maps bare aliases to the family (latest)", () => {
@@ -155,6 +161,57 @@ describe("extractSystemPrompt", () => {
       { role: "user", content: "Hi" },
     ]);
     assert.equal(result, "You are an assistant");
+  });
+});
+
+describe("extractImages", () => {
+  it("returns [] when there are no images", () => {
+    assert.deepEqual(extractImages([{ role: "user", content: "hi" }]), []);
+  });
+
+  it("converts a data: URL to a base64 image block", () => {
+    const imgs = extractImages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAB" } },
+        ],
+      },
+    ]);
+    assert.equal(imgs.length, 1);
+    assert.deepEqual(imgs[0], {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "AAAB" },
+    });
+  });
+
+  it("converts an http(s) URL to a url image block", () => {
+    const imgs = extractImages([
+      {
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: "https://x.com/a.jpg" } }],
+      },
+    ]);
+    assert.deepEqual(imgs[0], {
+      type: "image",
+      source: { type: "url", url: "https://x.com/a.jpg" },
+    });
+  });
+
+  it("collects images across multiple messages", () => {
+    const imgs = extractImages([
+      { role: "user", content: [{ type: "image_url", image_url: { url: "https://a/1.png" } }] },
+      { role: "user", content: [{ type: "image_url", image_url: { url: "https://a/2.png" } }] },
+    ]);
+    assert.equal(imgs.length, 2);
+  });
+
+  it("ignores unsupported url forms", () => {
+    const imgs = extractImages([
+      { role: "user", content: [{ type: "image_url", image_url: { url: "ftp://nope" } }] },
+    ]);
+    assert.deepEqual(imgs, []);
   });
 });
 

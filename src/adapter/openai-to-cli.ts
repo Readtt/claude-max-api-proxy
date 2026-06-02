@@ -12,23 +12,58 @@ import { buildToolingSystemPrompt } from "./tools.js";
 /**
  * Extract text from message content, which can be a string, an array of
  * content parts (OpenAI format), or null (e.g. an assistant tool-call message).
- * Image parts are noted as placeholders — the CLI's text interface can't take
- * image bytes (see COMPATIBILITY.md).
+ * Image parts are handled separately (see extractImages) and skipped here.
  */
 function extractText(content: string | OpenAIContentPart[] | null | undefined): string {
   if (content == null) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .map((part) => {
-        if (part.type === "text" && part.text) return part.text;
-        if (part.type === "image_url") return "[image omitted: this proxy is text-only]";
-        return "";
-      })
-      .filter(Boolean)
+      .filter((part) => part.type === "text" && part.text)
+      .map((part) => part.text as string)
       .join("\n");
   }
   return String(content);
+}
+
+/** An Anthropic-format image content block, as the CLI accepts on stdin. */
+export interface AnthropicImageBlock {
+  type: "image";
+  source:
+    | { type: "base64"; media_type: string; data: string }
+    | { type: "url"; url: string };
+}
+
+/**
+ * Collect image content parts from all messages and convert OpenAI `image_url`
+ * entries into Anthropic image blocks. Handles both `data:` URLs (base64) and
+ * remote http(s) URLs. Returns [] when there are no images.
+ */
+export function extractImages(messages: OpenAIChatRequest["messages"]): AnthropicImageBlock[] {
+  const images: AnthropicImageBlock[] = [];
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type !== "image_url" || !part.image_url?.url) continue;
+      const block = imageUrlToBlock(part.image_url.url);
+      if (block) images.push(block);
+    }
+  }
+  return images;
+}
+
+function imageUrlToBlock(url: string): AnthropicImageBlock | null {
+  const data = url.match(/^data:([^;,]+);base64,(.*)$/s);
+  if (data) {
+    return {
+      type: "image",
+      source: { type: "base64", media_type: data[1], data: data[2] },
+    };
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return { type: "image", source: { type: "url", url } };
+  }
+  return null; // unsupported (e.g. bare base64 without data: prefix)
 }
 
 // A value accepted by `claude --model`: a family alias (opus/sonnet/haiku,
@@ -43,6 +78,7 @@ export interface CliInput {
   model: ClaudeModel;
   systemPrompt?: string;
   sessionId?: string;
+  images?: AnthropicImageBlock[];
 }
 
 /**
@@ -173,11 +209,14 @@ export function openaiToCli(request: OpenAIChatRequest): CliInput {
   );
   const systemPrompt = [userSystem, tooling].filter(Boolean).join("\n\n");
 
+  const images = extractImages(request.messages);
+
   return {
     prompt: messagesToPrompt(request.messages),
     model: extractModel(request.model),
     systemPrompt: systemPrompt || undefined,
     sessionId: request.user, // Use OpenAI's user field for session mapping
+    images: images.length > 0 ? images : undefined,
   };
 }
 

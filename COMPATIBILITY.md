@@ -4,10 +4,11 @@ This proxy speaks the OpenAI **Chat Completions** API. Because it runs on top
 of the Claude Code CLI (not the raw Anthropic API), some things work natively,
 some are emulated, and a few can't be supported. This page is the honest map.
 
-**TL;DR** — for normal chat, streaming, tool/function calling, and JSON output,
-you can use it as a drop-in replacement for an OpenAI key. Sampling knobs
-(temperature, max_tokens, …) are accepted but ignored, and embeddings / vision /
-the legacy completions endpoint aren't available.
+**TL;DR** — for normal chat, streaming, tool/function calling, JSON output, and
+image input (vision), you can use it as a drop-in replacement for an OpenAI key.
+Sampling knobs (temperature, max_tokens, …) are accepted but ignored, and
+embeddings / image generation / the legacy completions endpoint aren't
+available.
 
 ## Endpoints
 
@@ -38,7 +39,7 @@ the legacy completions endpoint aren't available.
 | `n` | ⚠️ Ignored | Always one choice. |
 | `frequency_penalty`, `presence_penalty` | ⚠️ Ignored | Not exposed by the CLI. |
 | `logprobs`, `top_logprobs` | ❌ | Not available. |
-| image (`image_url`) content parts | ❌ | Text-only interface; images are dropped with a placeholder. |
+| image (`image_url`) content parts | ✅ | Vision. `data:` (base64) and http(s) URLs. See below. |
 
 > ⚠️ "Ignored" means the field is accepted and the request still succeeds — the
 > value just has no effect. Nothing 400s on an unknown or unsupported param.
@@ -119,6 +120,29 @@ Both forms work and return parseable JSON as the message content:
 The proxy instructs the model to emit JSON only and strips any stray code fence.
 The schema guides the model but isn't hard-validated by the proxy.
 
+## Image input (vision)
+
+Send images with the standard OpenAI content-parts format. Both base64 `data:`
+URLs and remote http(s) URLs work:
+
+```json
+{
+  "model": "opus",
+  "messages": [{
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "What's in this image?" },
+      { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0K..." } }
+    ]
+  }]
+}
+```
+
+When any message contains an image, the proxy switches the CLI to stream-json
+input and forwards the images as Anthropic image blocks. Works in streaming and
+non-streaming mode. (Image *generation* — creating images — is not supported;
+this is vision input only.)
+
 ## When tools or JSON mode are on, streaming buffers
 
 A tool call is JSON that has to become `tool_calls` (not streamed text), so with
@@ -130,7 +154,7 @@ streams token-by-token as usual.
 
 - Sampling control (temperature, top_p, max_tokens, stop, seed).
 - Token-probability data (logprobs).
-- Embeddings, image generation/inputs, audio.
+- Embeddings, image *generation*, audio. (Image *input*/vision works.)
 - Guaranteed-schema structured outputs (it's prompt-guided, not enforced).
 
 Everything else in day-to-day chat + tool-using app development works.

@@ -65,6 +65,7 @@ not needed for the OpenAI response.
 | `model` | family alias (latest) or full ID (pinned), via `--model` |
 | `tools` / `tool_choice` | injected into the system prompt; reply parsed back into `tool_calls` |
 | `response_format` | system-prompt instruction to emit JSON only |
+| `image_url` content parts | sent as Anthropic image blocks via `--input-format stream-json` |
 | `user` field | session id |
 
 Tool calling and JSON mode are emulated — see [COMPATIBILITY.md](COMPATIBILITY.md)

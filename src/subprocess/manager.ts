@@ -18,7 +18,7 @@ import type {
   ClaudeCliStreamEvent,
 } from "../types/claude-cli.js";
 import { isAssistantMessage, isResultMessage, isContentDelta } from "../types/claude-cli.js";
-import type { ClaudeModel } from "../adapter/openai-to-cli.js";
+import type { ClaudeModel, AnthropicImageBlock } from "../adapter/openai-to-cli.js";
 
 export interface SubprocessOptions {
   model: ClaudeModel;
@@ -26,6 +26,8 @@ export interface SubprocessOptions {
   systemPrompt?: string;
   cwd?: string;
   timeout?: number;
+  /** Image content blocks; when present the prompt is sent as stream-json. */
+  images?: AnthropicImageBlock[];
 }
 
 export interface SubprocessEvents {
@@ -125,8 +127,21 @@ export class ClaudeSubprocess extends EventEmitter {
           }
         });
 
-        // Pass prompt via stdin to avoid E2BIG on large prompts (fixes #12)
-        this.process.stdin?.write(prompt);
+        // Pass input via stdin to avoid E2BIG on large prompts.
+        // With images, send a stream-json user message (the only way the CLI
+        // accepts image content); otherwise send the prompt as plain text.
+        if (options.images && options.images.length > 0) {
+          const content: unknown[] = [];
+          if (prompt) content.push({ type: "text", text: prompt });
+          content.push(...options.images);
+          const message = {
+            type: "user",
+            message: { role: "user", content },
+          };
+          this.process.stdin?.write(JSON.stringify(message) + "\n");
+        } else {
+          this.process.stdin?.write(prompt);
+        }
         this.process.stdin?.end();
 
         console.error(`[Subprocess] Process spawned with PID: ${this.process.pid}`);
@@ -186,6 +201,14 @@ export class ClaudeSubprocess extends EventEmitter {
       "--include-partial-messages", // Enable streaming chunks
       "--model",
       options.model, // Model alias (opus/sonnet/haiku)
+    ];
+
+    // Images can only be sent via stream-json input (Anthropic content blocks).
+    if (options.images && options.images.length > 0) {
+      args.push("--input-format", "stream-json");
+    }
+
+    args.push(
       "--no-session-persistence", // Don't save sessions to disk
       // --- Isolation: behave as a pure chat API regardless of the host ---
       "--setting-sources",
@@ -194,8 +217,8 @@ export class ClaudeSubprocess extends EventEmitter {
       "--disable-slash-commands", // No skills/slash commands
       "--tools",
       "", // No built-in tools -> the proxy can never run Bash/Edit on the host
-      "--dangerously-skip-permissions", // Safe: there are no tools to permit
-    ];
+      "--dangerously-skip-permissions" // Safe: there are no tools to permit
+    );
 
     if (this.systemPromptFile) {
       args.push("--append-system-prompt-file", this.systemPromptFile);

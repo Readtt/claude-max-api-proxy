@@ -73,10 +73,10 @@ Provider prefixes are fine too: `anthropic/...`, `claude-max/...`,
 ## OpenAI compatibility
 
 Use it as a drop-in OpenAI endpoint: chat, streaming, **function/tool calling**,
-and **JSON mode** (`response_format`) all work. Sampling params like
-`temperature` and `max_tokens` are accepted but ignored (the CLI can't honor
-them), and embeddings/vision/audio aren't available. Full matrix:
-[COMPATIBILITY.md](COMPATIBILITY.md).
+**JSON mode** (`response_format`), and **image input/vision** (`image_url`) all
+work. Sampling params like `temperature` and `max_tokens` are accepted but
+ignored (the CLI can't honor them), and embeddings/image-generation/audio aren't
+available. Full matrix: [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Endpoints
 
