@@ -225,13 +225,30 @@ describe("openaiToCli", () => {
     assert.equal(result.prompt, "Test");
   });
 
-  it("uses user field as sessionId", () => {
+  it("accepts a user field without failing (no longer used for sessions)", () => {
     const result = openaiToCli({
       model: "claude-sonnet-4",
       messages: [{ role: "user", content: "Test" }],
       user: "session-123",
     });
-    assert.equal(result.sessionId, "session-123");
+    assert.equal(result.prompt, "Test");
+    assert.ok(!("sessionId" in result));
+  });
+
+  it("maps a valid reasoning_effort, ignores an invalid one", () => {
+    const ok = openaiToCli({
+      model: "opus",
+      messages: [{ role: "user", content: "Test" }],
+      reasoning_effort: "high",
+    });
+    assert.equal(ok.reasoningEffort, "high");
+
+    const bad = openaiToCli({
+      model: "opus",
+      messages: [{ role: "user", content: "Test" }],
+      reasoning_effort: "turbo",
+    });
+    assert.equal(bad.reasoningEffort, undefined);
   });
 
   it("extracts system prompt separately", () => {

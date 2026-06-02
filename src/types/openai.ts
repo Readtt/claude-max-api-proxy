@@ -77,7 +77,11 @@ export interface OpenAIChatRequest {
   tools?: OpenAITool[];
   tool_choice?: OpenAIToolChoice;
   response_format?: OpenAIResponseFormat;
-  user?: string; // Used for session mapping
+  /** Reasoning effort (low/medium/high/xhigh/max) → CLI --effort. */
+  reasoning_effort?: string;
+  /** Streaming options; { include_usage: true } adds a final usage chunk. */
+  stream_options?: { include_usage?: boolean };
+  user?: string; // Accepted; not used (sessions are rebuilt from messages).
   /** Tolerate any other OpenAI params without failing. */
   [key: string]: unknown;
 }
@@ -130,6 +134,12 @@ export interface OpenAIChatChunk {
   created: number;
   model: string;
   choices: OpenAIChatChunkChoice[];
+  /** Present only on the final chunk when stream_options.include_usage is set. */
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 export interface OpenAIModel {

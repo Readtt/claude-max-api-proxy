@@ -5,6 +5,7 @@
  */
 
 import type { Request, Response } from "express";
+import { createRequire } from "module";
 import { v4 as uuidv4 } from "uuid";
 import { ClaudeSubprocess } from "../subprocess/manager.js";
 import { openaiToCli, wantsToolCalls } from "../adapter/openai-to-cli.js";
@@ -12,11 +13,24 @@ import { parseToolCalls, extractJsonContent } from "../adapter/tools.js";
 import {
   cliResultToOpenai,
   createDoneChunk,
+  mapFinishReason,
 } from "../adapter/cli-to-openai.js";
+import { listModels, getModel, DEFAULT_MODEL_ALIAS } from "../models.js";
 import type { OpenAIChatRequest } from "../types/openai.js";
 import type { ClaudeCliAssistant, ClaudeCliResult, ClaudeCliStreamEvent } from "../types/claude-cli.js";
 import { usageTracker } from "../usage/tracker.js";
 import { isAuthEnabled } from "./auth.js";
+
+// Read the version from package.json at runtime so /health never drifts from
+// the published version. routes.js lives at dist/server/, so ../../ is the root.
+const VERSION: string = (() => {
+  try {
+    const require = createRequire(import.meta.url);
+    return (require("../../package.json") as { version: string }).version;
+  } catch {
+    return "unknown";
+  }
+})();
 
 /**
  * Build a useful error message when the CLI exits without a response.
@@ -45,7 +59,8 @@ export async function handleChatCompletions(
   const requestId = uuidv4().replace(/-/g, "").slice(0, 24);
   const body = req.body as OpenAIChatRequest;
   const stream = body.stream === true;
-  const requestedModel = body.model || "claude-opus-4-8";
+  const requestedModel = body.model || DEFAULT_MODEL_ALIAS;
+  const includeUsage = stream && body.stream_options?.include_usage === true;
   const startTime = Date.now();
 
   try {
@@ -63,13 +78,28 @@ export async function handleChatCompletions(
 
     // Convert to CLI input format
     const cliInput = openaiToCli(body);
+
+    // A prompt with no user content (e.g. only system messages) gives the CLI
+    // nothing to answer — reject it rather than hanging on empty stdin.
+    if (!cliInput.prompt.trim()) {
+      res.status(400).json({
+        error: {
+          message:
+            "No user content to respond to. Provide at least one user message.",
+          type: "invalid_request_error",
+          code: "empty_prompt",
+        },
+      });
+      return;
+    }
+
     const subprocess = new ClaudeSubprocess();
     const parseTools = wantsToolCalls(body);
     const rf = body.response_format?.type;
     const jsonMode = rf === "json_object" || rf === "json_schema";
 
     if (stream) {
-      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode);
+      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode, includeUsage);
     } else {
       await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode);
     }
@@ -114,7 +144,8 @@ async function handleStreamingResponse(
   requestedModel: string,
   startTime: number,
   parseTools: boolean,
-  jsonMode: boolean
+  jsonMode: boolean,
+  includeUsage: boolean
 ): Promise<void> {
   // Tool calls and JSON mode require the full reply before we can shape it,
   // so we buffer instead of streaming raw deltas in those cases.
@@ -134,8 +165,29 @@ async function handleStreamingResponse(
 
   return new Promise<void>((resolve, reject) => {
     let isFirst = true;
-    let lastModel = requestedModel;
     let isComplete = false;
+    const created = () => Math.floor(Date.now() / 1000);
+
+    // OpenAI's stream_options.include_usage: a final chunk with empty choices
+    // and a usage object, emitted just before [DONE].
+    const sendUsageChunk = (result: ClaudeCliResult) => {
+      const input = result.usage?.input_tokens || 0;
+      const output = result.usage?.output_tokens || 0;
+      res.write(
+        `data: ${JSON.stringify({
+          id: `chatcmpl-${requestId}`,
+          object: "chat.completion.chunk",
+          created: created(),
+          model: requestedModel,
+          choices: [],
+          usage: {
+            prompt_tokens: input,
+            completion_tokens: output,
+            total_tokens: input + output,
+          },
+        })}\n\n`
+      );
+    };
 
     // Handle actual client disconnect (response stream closed)
     res.on("close", () => {
@@ -146,7 +198,6 @@ async function handleStreamingResponse(
       resolve();
     });
 
-    const created = () => Math.floor(Date.now() / 1000);
     const sendChunk = (choice: object) => {
       res.write(
         `data: ${JSON.stringify({
@@ -230,9 +281,14 @@ async function handleStreamingResponse(
               });
             }
           }
-          const doneChunk = createDoneChunk(requestId, lastModel);
+          const doneChunk = createDoneChunk(
+            requestId,
+            requestedModel,
+            mapFinishReason(result.stop_reason)
+          );
           res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
         }
+        if (includeUsage) sendUsageChunk(result);
         res.write("data: [DONE]\n\n");
         res.end();
       }
@@ -281,7 +337,7 @@ async function handleStreamingResponse(
     subprocess.start(cliInput.prompt, {
       model: cliInput.model,
       systemPrompt: cliInput.systemPrompt,
-      sessionId: cliInput.sessionId,
+      reasoningEffort: cliInput.reasoningEffort,
       images: cliInput.images,
     }).catch((err) => {
       console.error("[Streaming] Subprocess start error:", err);
@@ -379,7 +435,7 @@ async function handleNonStreamingResponse(
       .start(cliInput.prompt, {
         model: cliInput.model,
         systemPrompt: cliInput.systemPrompt,
-        sessionId: cliInput.sessionId,
+        reasoningEffort: cliInput.reasoningEffort,
         images: cliInput.images,
       })
       .catch((error) => {
@@ -398,27 +454,48 @@ async function handleNonStreamingResponse(
 /**
  * Handle GET /v1/models
  *
- * Returns available models
+ * Lists the evergreen family aliases (opus/sonnet/haiku, always the latest in
+ * each family) plus any pinned IDs from CLAUDE_PROXY_MODELS. No code change is
+ * needed for new model releases — see src/models.ts.
  */
 export function handleModels(_req: Request, res: Response): void {
   const created = Math.floor(Date.now() / 1000);
-  const ids = [
-    "claude-opus-4-8",
-    "claude-opus-4",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4",
-    "claude-haiku-4-5-20251001",
-    "claude-haiku-4",
-  ];
 
   res.json({
     object: "list",
-    data: ids.map((id) => ({
-      id,
+    data: listModels().map((m) => ({
+      id: m.id,
       object: "model",
       owned_by: "anthropic",
       created,
     })),
+  });
+}
+
+/**
+ * Handle GET /v1/models/:model
+ *
+ * Retrieve a single model. Resolves family aliases and any recognizable Claude
+ * version ID; 404s on clearly-foreign names.
+ */
+export function handleModel(req: Request, res: Response): void {
+  const id = String(req.params.model);
+  const model = getModel(id);
+  if (!model) {
+    res.status(404).json({
+      error: {
+        message: `The model '${id}' does not exist`,
+        type: "invalid_request_error",
+        code: "model_not_found",
+      },
+    });
+    return;
+  }
+  res.json({
+    id: model.id,
+    object: "model",
+    owned_by: "anthropic",
+    created: Math.floor(Date.now() / 1000),
   });
 }
 
@@ -464,7 +541,7 @@ export function handleHealth(_req: Request, res: Response): void {
   res.json({
     status: "ok",
     provider: "claude-code-cli",
-    version: "1.4.0",
+    version: VERSION,
     auth: isAuthEnabled() ? "enabled" : "disabled",
     usage: {
       totalRequests: summary.totalRequests,

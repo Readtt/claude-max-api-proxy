@@ -6,7 +6,7 @@
 
 import express, { Express, Request, Response, NextFunction } from "express";
 import { createServer, Server } from "http";
-import { handleChatCompletions, handleModels, handleHealth, handleUsage, handleUsageRecent } from "./routes.js";
+import { handleChatCompletions, handleModels, handleModel, handleHealth, handleUsage, handleUsageRecent } from "./routes.js";
 import { initAuth, authMiddleware } from "./auth.js";
 
 export interface ServerConfig {
@@ -58,6 +58,7 @@ function createApp(): Express {
   // Routes
   app.get("/health", handleHealth);
   app.get("/v1/models", handleModels);
+  app.get("/v1/models/:model", handleModel);
   app.post("/v1/chat/completions", handleChatCompletions);
   app.get("/v1/usage", handleUsage);
   app.get("/v1/usage/recent", handleUsageRecent);

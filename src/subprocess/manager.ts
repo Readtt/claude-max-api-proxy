@@ -18,16 +18,34 @@ import type {
   ClaudeCliStreamEvent,
 } from "../types/claude-cli.js";
 import { isAssistantMessage, isResultMessage, isContentDelta } from "../types/claude-cli.js";
-import type { ClaudeModel, AnthropicImageBlock } from "../adapter/openai-to-cli.js";
+import type {
+  ClaudeModel,
+  AnthropicImageBlock,
+  ReasoningEffort,
+} from "../adapter/openai-to-cli.js";
 
 export interface SubprocessOptions {
   model: ClaudeModel;
-  sessionId?: string;
   systemPrompt?: string;
+  /** Reasoning effort (low/medium/high/xhigh/max) → --effort. */
+  reasoningEffort?: ReasoningEffort;
   cwd?: string;
   timeout?: number;
   /** Image content blocks; when present the prompt is sent as stream-json. */
   images?: AnthropicImageBlock[];
+}
+
+/**
+ * How the caller's system prompt is applied to the CLI:
+ *   - "replace" (default): `--system-prompt-file` — the proxy fully controls the
+ *     persona, so it behaves like a neutral OpenAI-style chat model rather than
+ *     the Claude Code coding agent.
+ *   - "append": `--append-system-prompt-file` — adds on top of the CLI's default
+ *     system prompt (keeps Claude Code framing).
+ * Set SYSTEM_PROMPT_MODE=append to opt into the legacy behavior.
+ */
+function systemPromptMode(): "replace" | "append" {
+  return process.env.SYSTEM_PROMPT_MODE === "append" ? "append" : "replace";
 }
 
 export interface SubprocessEvents {
@@ -75,7 +93,8 @@ export class ClaudeSubprocess extends EventEmitter {
    *
    * Both the prompt and the system prompt are kept OFF the command line:
    *   - prompt        -> written to the CLI's stdin
-   *   - systemPrompt  -> written to a temp file, passed via --append-system-prompt-file
+   *   - systemPrompt  -> written to a temp file, passed via --system-prompt-file
+   *                      (or --append-system-prompt-file; see systemPromptMode)
    * This avoids E2BIG (Linux/macOS) and the ~32 KB command-line cap (Windows),
    * which otherwise killed large first messages (e.g. code-review diffs) before
    * streaming even started.
@@ -200,8 +219,13 @@ export class ClaudeSubprocess extends EventEmitter {
       "--verbose", // Required for stream-json
       "--include-partial-messages", // Enable streaming chunks
       "--model",
-      options.model, // Model alias (opus/sonnet/haiku)
+      options.model, // Model alias (opus/sonnet/haiku) or pinned full ID
     ];
+
+    // Map OpenAI reasoning_effort → the CLI's --effort.
+    if (options.reasoningEffort) {
+      args.push("--effort", options.reasoningEffort);
+    }
 
     // Images can only be sent via stream-json input (Anthropic content blocks).
     if (options.images && options.images.length > 0) {
@@ -221,11 +245,11 @@ export class ClaudeSubprocess extends EventEmitter {
     );
 
     if (this.systemPromptFile) {
-      args.push("--append-system-prompt-file", this.systemPromptFile);
-    }
-
-    if (options.sessionId) {
-      args.push("--session-id", options.sessionId);
+      const flag =
+        systemPromptMode() === "append"
+          ? "--append-system-prompt-file"
+          : "--system-prompt-file";
+      args.push(flag, this.systemPromptFile);
     }
 
     return args;

@@ -8,6 +8,24 @@ import type {
   OpenAIContentPart,
 } from "../types/openai.js";
 import { buildToolingSystemPrompt } from "./tools.js";
+import { resolveModelArg, type ClaudeModel } from "../models.js";
+
+// Re-exported for backwards compatibility; model resolution lives in models.ts.
+export { resolveModelArg as extractModel } from "../models.js";
+export type { ClaudeModel } from "../models.js";
+
+/** Reasoning effort levels the CLI accepts via --effort. */
+const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningEffort = (typeof VALID_EFFORTS)[number];
+
+/** Validate an OpenAI `reasoning_effort` value; undefined if absent/invalid. */
+export function extractReasoningEffort(value: unknown): ReasoningEffort | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.toLowerCase();
+  return (VALID_EFFORTS as readonly string[]).includes(v)
+    ? (v as ReasoningEffort)
+    : undefined;
+}
 
 /**
  * Extract text from message content, which can be a string, an array of
@@ -66,56 +84,12 @@ function imageUrlToBlock(url: string): AnthropicImageBlock | null {
   return null; // unsupported (e.g. bare base64 without data: prefix)
 }
 
-// A value accepted by `claude --model`: a family alias (opus/sonnet/haiku,
-// which resolves to the latest in that family) or a full model ID
-// (e.g. claude-opus-4-7) which pins that exact version.
-export type ClaudeModel = string;
-
-const PROVIDER_PREFIXES = ["anthropic/", "claude-max/", "claude-code-cli/"];
-
 export interface CliInput {
   prompt: string;
   model: ClaudeModel;
   systemPrompt?: string;
-  sessionId?: string;
+  reasoningEffort?: ReasoningEffort;
   images?: AnthropicImageBlock[];
-}
-
-/**
- * Resolve a requested model string to a value for `claude --model`.
- *
- * Two behaviours, so clients can either ride the latest model or pin one:
- *   - A full version ID (family + at least major.minor, e.g.
- *     `claude-opus-4-7`, `claude-sonnet-4-5-20250929`) is passed through
- *     verbatim so the CLI runs that exact version. Provider prefixes
- *     (`anthropic/`, `claude-max/`, `claude-code-cli/`) are stripped first.
- *   - Anything else maps to the family alias (`opus`/`sonnet`/`haiku`), which
- *     the CLI resolves to the latest model in that family. This covers bare
- *     aliases, major-only names like `claude-opus-4` (not a valid full ID),
- *     and unknown names.
- *
- * New models therefore need no code change: pin them by full ID, or get the
- * newest automatically via the alias. Non-Claude names default to `opus`.
- */
-export function extractModel(model: string): ClaudeModel {
-  let m = (model || "").trim();
-  for (const prefix of PROVIDER_PREFIXES) {
-    if (m.startsWith(prefix)) {
-      m = m.slice(prefix.length);
-      break;
-    }
-  }
-
-  // Pin a specific version when the ID carries a family + major-minor version.
-  if (/^claude-(opus|sonnet|haiku)-\d+-\d+/i.test(m)) {
-    return m;
-  }
-
-  // Otherwise pick the family's latest via its alias.
-  const lower = m.toLowerCase();
-  if (lower.includes("haiku")) return "haiku";
-  if (lower.includes("sonnet")) return "sonnet";
-  return "opus";
 }
 
 /**
@@ -213,9 +187,9 @@ export function openaiToCli(request: OpenAIChatRequest): CliInput {
 
   return {
     prompt: messagesToPrompt(request.messages),
-    model: extractModel(request.model),
+    model: resolveModelArg(request.model),
     systemPrompt: systemPrompt || undefined,
-    sessionId: request.user, // Use OpenAI's user field for session mapping
+    reasoningEffort: extractReasoningEffort(request.reasoning_effort),
     images: images.length > 0 ? images : undefined,
   };
 }
