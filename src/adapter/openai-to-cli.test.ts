@@ -3,37 +3,40 @@ import assert from "node:assert/strict";
 import { extractModel, messagesToPrompt, extractSystemPrompt, openaiToCli } from "./openai-to-cli.js";
 
 describe("extractModel", () => {
-  it("maps direct model names", () => {
-    assert.equal(extractModel("claude-opus-4"), "opus");
-    assert.equal(extractModel("claude-opus-4-6"), "opus");
-    assert.equal(extractModel("claude-opus-4-8"), "opus");
-    assert.equal(extractModel("claude-sonnet-4"), "sonnet");
-    assert.equal(extractModel("claude-sonnet-4-5-20250929"), "sonnet");
-    assert.equal(extractModel("claude-sonnet-4-6"), "sonnet");
-    assert.equal(extractModel("claude-haiku-4"), "haiku");
-    assert.equal(extractModel("claude-haiku-4-5-20251001"), "haiku");
-  });
-
-  it("maps provider-prefixed names", () => {
-    assert.equal(extractModel("claude-code-cli/claude-opus-4"), "opus");
-    assert.equal(extractModel("anthropic/claude-opus-4-6"), "opus");
-    assert.equal(extractModel("claude-max/claude-sonnet-4-6"), "sonnet");
-    assert.equal(extractModel("claude-max/claude-haiku-4-5-20251001"), "haiku");
-  });
-
-  it("maps aliases", () => {
+  it("maps bare aliases to the family (latest)", () => {
     assert.equal(extractModel("opus"), "opus");
     assert.equal(extractModel("sonnet"), "sonnet");
     assert.equal(extractModel("haiku"), "haiku");
+    assert.equal(extractModel("OPUS"), "opus"); // case-insensitive
   });
 
-  it("future-proofs new model names by family keyword", () => {
-    // No code change needed when Anthropic ships new versions
-    assert.equal(extractModel("claude-opus-5"), "opus");
-    assert.equal(extractModel("claude-opus-4-9-20270101"), "opus");
-    assert.equal(extractModel("anthropic/claude-sonnet-5-preview"), "sonnet");
-    assert.equal(extractModel("claude-haiku-5"), "haiku");
-    assert.equal(extractModel("OPUS"), "opus"); // case-insensitive
+  it("maps major-only names to the family alias (not a valid full ID)", () => {
+    assert.equal(extractModel("claude-opus-4"), "opus");
+    assert.equal(extractModel("claude-sonnet-4"), "sonnet");
+    assert.equal(extractModel("claude-haiku-4"), "haiku");
+  });
+
+  it("pins specific versions by passing the full ID through", () => {
+    assert.equal(extractModel("claude-opus-4-7"), "claude-opus-4-7");
+    assert.equal(extractModel("claude-opus-4-8"), "claude-opus-4-8");
+    assert.equal(extractModel("claude-sonnet-4-6"), "claude-sonnet-4-6");
+    assert.equal(
+      extractModel("claude-haiku-4-5-20251001"),
+      "claude-haiku-4-5-20251001"
+    );
+  });
+
+  it("strips provider prefixes before resolving", () => {
+    assert.equal(extractModel("anthropic/claude-opus-4-7"), "claude-opus-4-7");
+    assert.equal(extractModel("claude-max/claude-sonnet-4-6"), "claude-sonnet-4-6");
+    assert.equal(extractModel("claude-code-cli/opus"), "opus");
+    assert.equal(extractModel("claude-max/claude-opus-4"), "opus"); // major-only -> alias
+  });
+
+  it("future-proofs new versions without code changes", () => {
+    assert.equal(extractModel("claude-opus-5-0"), "claude-opus-5-0"); // pinned
+    assert.equal(extractModel("claude-opus-5"), "opus"); // major-only -> latest opus
+    assert.equal(extractModel("anthropic/claude-sonnet-5-1"), "claude-sonnet-5-1");
   });
 
   it("defaults to opus for unknown or empty models", () => {
@@ -126,7 +129,7 @@ describe("openaiToCli", () => {
       model: "claude-opus-4-6",
       messages: [{ role: "user", content: "Test" }],
     });
-    assert.equal(result.model, "opus");
+    assert.equal(result.model, "claude-opus-4-6"); // specific version is pinned
     assert.equal(result.prompt, "Test");
   });
 
