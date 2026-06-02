@@ -24,6 +24,10 @@ npm run serve       # build + start on http://localhost:3456
 - Use `spawn()` (never a shell) for subprocesses.
 - Keep prompt and system-prompt content **off the command line** (stdin / temp
   file) — see [ARCHITECTURE.md](ARCHITECTURE.md).
+- **Don't hardcode model lists.** All model knowledge lives in `src/models.ts`;
+  the family aliases auto-resolve to the latest release, so new Claude models
+  need no code change. Add models there (or via `CLAUDE_PROXY_MODELS`), nowhere
+  else.
 
 ## Bug reports
 

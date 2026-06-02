@@ -16,6 +16,7 @@ available.
 |----------|--------|
 | `POST /v1/chat/completions` | ✅ Supported (streaming + non-streaming) |
 | `GET /v1/models` | ✅ Supported |
+| `GET /v1/models/{id}` | ✅ Supported (retrieve a single model) |
 | `GET /v1/usage`, `/v1/usage/recent` | ✅ Extra (token usage + estimated savings) |
 | `GET /health` | ✅ Extra |
 | `POST /v1/completions` (legacy) | ❌ Not supported — use chat completions |
@@ -31,7 +32,9 @@ available.
 | `stream` | ✅ | SSE token streaming. |
 | `tools`, `tool_choice` | ✅ *Emulated* | OpenAI function calling. See below. |
 | `response_format` | ✅ *Emulated* | `json_object` and `json_schema`. See below. |
-| `user` | ✅ | Used as a session hint. |
+| `reasoning_effort` | ✅ | `low`/`medium`/`high`/`xhigh`/`max` → the CLI's `--effort`. Invalid values ignored. |
+| `stream_options` | ✅ | `{ "include_usage": true }` adds a final usage chunk (see streaming below). |
+| `user` | ⚠️ Ignored | Accepted; conversation context is rebuilt from `messages`, so it isn't needed. |
 | `temperature`, `top_p` | ⚠️ Ignored | The CLI exposes no sampling controls. Accepted so clients don't break. |
 | `max_tokens`, `max_completion_tokens` | ⚠️ Ignored | No CLI flag to cap output length. |
 | `stop` | ⚠️ Ignored | No CLI stop-sequence support. |
@@ -50,9 +53,10 @@ available.
 |-------|--------|
 | `choices[].message.content` | ✅ |
 | `choices[].message.tool_calls` | ✅ (emulated) |
-| `choices[].finish_reason` | ✅ `stop` / `tool_calls` |
+| `choices[].finish_reason` | ✅ `stop` / `length` / `content_filter` / `tool_calls` (mapped from the CLI's `stop_reason`) |
 | `usage` (prompt/completion/total tokens) | ✅ Real counts from the CLI |
-| streaming chunks (`chat.completion.chunk`) | ✅ content + tool_calls deltas |
+| `model` | ✅ Echoed verbatim from the request (consistent across every streamed chunk) |
+| streaming chunks (`chat.completion.chunk`) | ✅ content + tool_calls deltas; optional final usage chunk |
 
 ## Function / tool calling (emulated)
 
@@ -120,6 +124,14 @@ Both forms work and return parseable JSON as the message content:
 The proxy instructs the model to emit JSON only and strips any stray code fence.
 The schema guides the model but isn't hard-validated by the proxy.
 
+> **Why emulation, not the CLI's native `--json-schema`?** The CLI does have a
+> `--json-schema` flag, but it relies on a tool call to emit the structured
+> result. The proxy runs the CLI fully locked down (`--tools ""`, see
+> [ARCHITECTURE.md](ARCHITECTURE.md)) so it can never execute tools on your
+> machine — and in that mode `--json-schema` returns a prose summary instead of
+> the JSON object. Prompt-based emulation is the reliable path given that
+> security model.
+
 ## Image input (vision)
 
 Send images with the standard OpenAI content-parts format. Both base64 `data:`
@@ -149,6 +161,16 @@ A tool call is JSON that has to become `tool_calls` (not streamed text), so with
 `tools` or `response_format` set the proxy waits for the full reply, then emits
 it — one `tool_calls` delta, or one content delta of clean JSON. Plain chat
 streams token-by-token as usual.
+
+When you set `stream_options: { include_usage: true }`, a final chunk with an
+empty `choices` array and a `usage` object is emitted just before `[DONE]`,
+matching OpenAI's behavior.
+
+## Reasoning effort
+
+`reasoning_effort` maps to the CLI's `--effort`. Accepted values are `low`,
+`medium`, `high`, `xhigh`, and `max`; any other value is ignored (the request
+still succeeds).
 
 ## What you can't replicate from a real OpenAI/Anthropic key
 

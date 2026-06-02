@@ -70,13 +70,18 @@ releases:
 Provider prefixes are fine too: `anthropic/...`, `claude-max/...`,
 `claude-code-cli/...`. Unknown names default to the latest Opus.
 
+`GET /v1/models` lists the three family aliases (always the latest), so it never
+goes stale. To also advertise specific pinned IDs (e.g. for a UI model picker),
+set `CLAUDE_PROXY_MODELS=claude-opus-4-8,claude-sonnet-4-6`.
+
 ## OpenAI compatibility
 
 Use it as a drop-in OpenAI endpoint: chat, streaming, **function/tool calling**,
-**JSON mode** (`response_format`), and **image input/vision** (`image_url`) all
-work. Sampling params like `temperature` and `max_tokens` are accepted but
-ignored (the CLI can't honor them), and embeddings/image-generation/audio aren't
-available. Full matrix: [COMPATIBILITY.md](COMPATIBILITY.md).
+**JSON mode** (`response_format`), **image input/vision** (`image_url`), and
+**`reasoning_effort`** all work. Sampling params like `temperature` and
+`max_tokens` are accepted but ignored (the CLI can't honor them), and
+embeddings/image-generation/audio aren't available. Full matrix:
+[COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Endpoints
 
@@ -84,7 +89,8 @@ available. Full matrix: [COMPATIBILITY.md](COMPATIBILITY.md).
 |----------|-------------|
 | `POST /v1/chat/completions` | Chat (streaming + non-streaming) |
 | `GET /v1/models` | List models |
-| `GET /v1/usage` | Token usage + estimated savings |
+| `GET /v1/models/{id}` | Retrieve a single model |
+| `GET /v1/usage`, `GET /v1/usage/recent` | Token usage + estimated savings |
 | `GET /health` | Health check |
 
 ## Optional: API key auth
@@ -96,6 +102,17 @@ API_KEYS=sk-team-abc,sk-team-def npm run serve
 ```
 
 Clients then send `Authorization: Bearer sk-team-abc`. Unset = no auth.
+
+## Configuration
+
+All optional, set as environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `API_KEYS` | _(unset)_ | Comma-separated Bearer tokens to require (see above). |
+| `CLAUDE_PROXY_MODELS` | _(unset)_ | Extra pinned model IDs to list in `/v1/models`. |
+| `SYSTEM_PROMPT_MODE` | `replace` | `replace` = your system prompt fully defines the persona (neutral, OpenAI-like). `append` = add it on top of Claude Code's default prompt. |
+| `DEBUG` | _(unset)_ | Log each request method + path. |
 
 ## Notes
 

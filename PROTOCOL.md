@@ -9,10 +9,13 @@ claude --print \
   --output-format stream-json \
   --verbose \
   --include-partial-messages \
-  --model <opus|sonnet|haiku> \
+  --model <opus|sonnet|haiku|full-id> \
   --no-session-persistence \
+  --setting-sources "" --strict-mcp-config \
+  --disable-slash-commands --tools "" \
   --dangerously-skip-permissions \
-  --append-system-prompt-file <tempfile>   # only when a system prompt is present
+  --effort <level> \                       # only when reasoning_effort is set
+  --system-prompt-file <tempfile>          # only when a system prompt is present
 # prompt is written to stdin
 ```
 
@@ -21,8 +24,10 @@ claude --print \
 | `--print` | Non-interactive; print and exit |
 | `--output-format stream-json` | JSON-lines output (requires `--verbose`) |
 | `--include-partial-messages` | Emit streaming text deltas |
-| `--model` | `opus` / `sonnet` / `haiku` alias → latest in family |
-| `--append-system-prompt-file` | System prompt from a file, not the command line |
+| `--model` | `opus` / `sonnet` / `haiku` alias → latest in family, or a pinned full ID |
+| `--effort` | Maps `reasoning_effort` (low/medium/high/xhigh/max) |
+| `--system-prompt-file` | System prompt from a file, not the command line (`--append-system-prompt-file` in `append` mode) |
+| isolation flags | `--setting-sources "" --strict-mcp-config --disable-slash-commands --tools ""` — behave as a pure chat API; never touch host config or run tools |
 
 The prompt goes to **stdin** and the system prompt to a **temp file** so neither
 hits the OS argument-length limit. See [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -47,10 +52,15 @@ The proxy only cares about two message types.
   "type": "result",
   "subtype": "success",
   "result": "The final text response",
+  "stop_reason": "end_turn",
   "usage": { "input_tokens": 2, "output_tokens": 13,
              "cache_creation_input_tokens": 42255, "cache_read_input_tokens": 0 }
 }
 ```
+
+`stop_reason` maps to the OpenAI `finish_reason`: `end_turn`/`stop_sequence` →
+`stop`, `max_tokens` → `length`, `refusal` → `content_filter`. An emulated tool
+call overrides this with `tool_calls`.
 
 Other line types (`system`/init, hooks, intermediate `assistant`) are parsed but
 not needed for the OpenAI response.
@@ -65,8 +75,9 @@ not needed for the OpenAI response.
 | `model` | family alias (latest) or full ID (pinned), via `--model` |
 | `tools` / `tool_choice` | injected into the system prompt; reply parsed back into `tool_calls` |
 | `response_format` | system-prompt instruction to emit JSON only |
+| `reasoning_effort` | `--effort <level>` |
 | `image_url` content parts | sent as Anthropic image blocks via `--input-format stream-json` |
-| `user` field | session id |
+| `user` field | accepted but unused (conversations are stateless) |
 
 Tool calling and JSON mode are emulated — see [COMPATIBILITY.md](COMPATIBILITY.md)
 for the full matrix of what's supported, emulated, or ignored.
