@@ -64,6 +64,9 @@
     "dist",
     "docs",
     "README.md",
+    "COMPATIBILITY.md",
+    "ARCHITECTURE.md",
+    "PROTOCOL.md",
     "CONTRIBUTING.md"
   ]
 }

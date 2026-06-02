@@ -28,10 +28,14 @@ OpenAI client
 | Path | Responsibility |
 |------|----------------|
 | `src/server/` | Express app, routes, optional API-key auth |
-| `src/adapter/` | OpenAI ⇄ CLI format conversion |
+| `src/adapter/` | OpenAI ⇄ CLI conversion; tool-calling + JSON-mode emulation (`tools.ts`) |
 | `src/subprocess/` | Spawning and parsing the `claude` CLI |
 | `src/usage/` | Token + cost-savings tracking |
 | `src/types/` | Shared TypeScript types |
+
+OpenAI function calling and `response_format` aren't native to the CLI, so they
+are emulated in `adapter/tools.ts` (schemas injected into the prompt, replies
+parsed back into `tool_calls`). See [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Why stdin + a temp file
 
@@ -44,4 +48,8 @@ line would hit the OS argument-length limit (~32 KB on Windows, `E2BIG`
 elsewhere) and fail large requests — e.g. a code-review diff plus tool
 definitions — before any response streamed.
 
-`spawn()` (not a shell) is used, so there is no shell-injection surface.
+The subprocess is also isolated so it behaves the same everywhere:
+`--setting-sources ""` (no hooks/CLAUDE.md/plugins), `--strict-mcp-config` (no
+host MCP servers), `--disable-slash-commands`, `--tools ""` (no host tool
+execution), and a dedicated temp working directory. `spawn()` (not a shell) is
+used, so there is no shell-injection surface.

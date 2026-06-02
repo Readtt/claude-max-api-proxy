@@ -62,8 +62,13 @@ not needed for the OpenAI response.
 | `system` / `developer` messages | concatenated → system prompt (temp file) |
 | `user` messages | the prompt (stdin) |
 | `assistant` messages | wrapped in `<previous_response>…</previous_response>` in the prompt |
-| `model` | mapped to an `opus`/`sonnet`/`haiku` alias |
+| `model` | family alias (latest) or full ID (pinned), via `--model` |
+| `tools` / `tool_choice` | injected into the system prompt; reply parsed back into `tool_calls` |
+| `response_format` | system-prompt instruction to emit JSON only |
 | `user` field | session id |
+
+Tool calling and JSON mode are emulated — see [COMPATIBILITY.md](COMPATIBILITY.md)
+for the full matrix of what's supported, emulated, or ignored.
 
 `total_cost_usd` in the CLI output reflects **subscription** usage, not API
 billing — the proxy uses it only to estimate the API cost you avoided.

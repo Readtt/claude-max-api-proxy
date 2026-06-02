@@ -58,15 +58,25 @@ client.chat.completions.create(
 
 ## Models
 
-Pass any of these as `model`; each maps to the latest model in its family.
+Two ways to choose a model, so you never have to update the proxy for new
+releases:
 
-| `model` | Family |
-|---------|--------|
-| `claude-opus-4-8`, `claude-opus-4` | Opus |
-| `claude-sonnet-4-6`, `claude-sonnet-4` | Sonnet |
-| `claude-haiku-4-5-20251001`, `claude-haiku-4` | Haiku |
+- **Latest in a family** — use a bare alias: `opus`, `sonnet`, or `haiku`
+  (also matched in any name, e.g. `claude-opus-4` → latest Opus).
+- **Pin a specific version** — use the full ID and it's passed straight to the
+  CLI: `claude-opus-4-7`, `claude-sonnet-4-5-20250929`, etc. Availability
+  depends on your subscription.
 
-Provider prefixes also work: `anthropic/...`, `claude-max/...`, `claude-code-cli/...`.
+Provider prefixes are fine too: `anthropic/...`, `claude-max/...`,
+`claude-code-cli/...`. Unknown names default to the latest Opus.
+
+## OpenAI compatibility
+
+Use it as a drop-in OpenAI endpoint: chat, streaming, **function/tool calling**,
+and **JSON mode** (`response_format`) all work. Sampling params like
+`temperature` and `max_tokens` are accepted but ignored (the CLI can't honor
+them), and embeddings/vision/audio aren't available. Full matrix:
+[COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Endpoints
 
