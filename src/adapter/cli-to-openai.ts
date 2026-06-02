@@ -3,7 +3,11 @@
  */
 
 import type { ClaudeCliAssistant, ClaudeCliResult } from "../types/claude-cli.js";
-import type { OpenAIChatResponse, OpenAIChatChunk } from "../types/openai.js";
+import type {
+  OpenAIChatResponse,
+  OpenAIChatChunk,
+  OpenAIToolCall,
+} from "../types/openai.js";
 
 /**
  * Extract text content from Claude CLI assistant message
@@ -64,17 +68,24 @@ export function createDoneChunk(requestId: string, model: string): OpenAIChatChu
 }
 
 /**
- * Convert Claude CLI result to OpenAI non-streaming response
+ * Convert Claude CLI result to OpenAI non-streaming response.
+ *
+ * When `toolCalls` are supplied (the model emitted an emulated tool call),
+ * the message content is null and finish_reason is "tool_calls", matching the
+ * OpenAI function-calling contract.
  */
 export function cliResultToOpenai(
   result: ClaudeCliResult,
   requestId: string,
-  requestedModel?: string
+  requestedModel?: string,
+  toolCalls?: OpenAIToolCall[]
 ): OpenAIChatResponse {
   // Use the requested model so the gateway trusts the response
   const modelName = requestedModel || (result.modelUsage
     ? Object.keys(result.modelUsage)[0]
     : "claude-sonnet-4");
+
+  const hasToolCalls = !!toolCalls && toolCalls.length > 0;
 
   return {
     id: `chatcmpl-${requestId}`,
@@ -84,11 +95,10 @@ export function cliResultToOpenai(
     choices: [
       {
         index: 0,
-        message: {
-          role: "assistant",
-          content: result.result,
-        },
-        finish_reason: "stop",
+        message: hasToolCalls
+          ? { role: "assistant", content: null, tool_calls: toolCalls }
+          : { role: "assistant", content: result.result },
+        finish_reason: hasToolCalls ? "tool_calls" : "stop",
       },
     ],
     usage: {

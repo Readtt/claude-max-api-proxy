@@ -2,23 +2,32 @@
  * Converts OpenAI chat request format to Claude CLI input
  */
 
-import type { OpenAIChatRequest, OpenAIContentPart } from "../types/openai.js";
+import type {
+  OpenAIChatRequest,
+  OpenAIChatMessage,
+  OpenAIContentPart,
+} from "../types/openai.js";
+import { buildToolingSystemPrompt } from "./tools.js";
 
 /**
- * Extract text from message content which can be either a string
- * or an array of content parts (OpenAI format).
+ * Extract text from message content, which can be a string, an array of
+ * content parts (OpenAI format), or null (e.g. an assistant tool-call message).
+ * Image parts are noted as placeholders — the CLI's text interface can't take
+ * image bytes (see COMPATIBILITY.md).
  */
-function extractText(content: string | OpenAIContentPart[]): string {
-  if (typeof content === "string") {
-    return content;
-  }
+function extractText(content: string | OpenAIContentPart[] | null | undefined): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .filter((part) => part.type === "text" && part.text)
-      .map((part) => part.text!)
+      .map((part) => {
+        if (part.type === "text" && part.text) return part.text;
+        if (part.type === "image_url") return "[image omitted: this proxy is text-only]";
+        return "";
+      })
+      .filter(Boolean)
       .join("\n");
   }
-  // Fallback: try to stringify
   return String(content);
 }
 
@@ -101,32 +110,85 @@ export function messagesToPrompt(messages: OpenAIChatRequest["messages"]): strin
     switch (msg.role) {
       case "system":
       case "developer":
-        // System messages handled via --append-system-prompt, skip here
+        // System messages handled via the system prompt file, skip here
         break;
 
       case "user":
         // User messages are the main prompt
-        parts.push(text);
+        if (text) parts.push(text);
         break;
 
-      case "assistant":
-        // Previous assistant responses for context
-        parts.push(`<previous_response>\n${text}\n</previous_response>\n`);
+      case "assistant": {
+        // Previous assistant turn — include any tool calls it made so the
+        // model has the full conversation context.
+        const segments: string[] = [];
+        if (text) segments.push(text);
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          const calls = msg.tool_calls.map((c) => ({
+            name: c.function.name,
+            arguments: safeJsonParse(c.function.arguments),
+          }));
+          segments.push("```tool_calls\n" + JSON.stringify(calls) + "\n```");
+        }
+        parts.push(
+          `<previous_response>\n${segments.join("\n")}\n</previous_response>\n`
+        );
         break;
+      }
+
+      case "tool":
+      case "function": {
+        // A tool result being fed back in.
+        const idAttr = msg.tool_call_id ? ` tool_call_id="${msg.tool_call_id}"` : "";
+        const nameAttr = msg.name ? ` name="${msg.name}"` : "";
+        parts.push(`<tool_result${nameAttr}${idAttr}>\n${text}\n</tool_result>\n`);
+        break;
+      }
     }
   }
 
   return parts.join("\n").trim();
 }
 
+function safeJsonParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
 /**
- * Convert OpenAI chat request to CLI input format
+ * Convert OpenAI chat request to CLI input format.
+ *
+ * The system prompt sent to the CLI is the caller's system/developer messages
+ * plus any emulated tooling/response_format instructions.
  */
 export function openaiToCli(request: OpenAIChatRequest): CliInput {
+  const userSystem = extractSystemPrompt(request.messages);
+  const tooling = buildToolingSystemPrompt(
+    request.tools,
+    request.tool_choice,
+    request.response_format
+  );
+  const systemPrompt = [userSystem, tooling].filter(Boolean).join("\n\n");
+
   return {
     prompt: messagesToPrompt(request.messages),
     model: extractModel(request.model),
-    systemPrompt: extractSystemPrompt(request.messages),
+    systemPrompt: systemPrompt || undefined,
     sessionId: request.user, // Use OpenAI's user field for session mapping
   };
 }
+
+/** True when the request asked for tools and tool_choice didn't forbid them. */
+export function wantsToolCalls(request: OpenAIChatRequest): boolean {
+  return (
+    Array.isArray(request.tools) &&
+    request.tools.length > 0 &&
+    request.tool_choice !== "none"
+  );
+}
+
+// extractText is exported for reuse/testing of content handling.
+export { extractText };

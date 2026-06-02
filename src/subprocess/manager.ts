@@ -190,6 +190,7 @@ export class ClaudeSubprocess extends EventEmitter {
       // --- Isolation: behave as a pure chat API regardless of the host ---
       "--setting-sources",
       "", // Load no user/project settings -> no hooks, no CLAUDE.md, no plugins
+      "--strict-mcp-config", // Ignore the host's MCP servers (Notion, etc.)
       "--disable-slash-commands", // No skills/slash commands
       "--tools",
       "", // No built-in tools -> the proxy can never run Bash/Edit on the host

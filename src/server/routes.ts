@@ -7,7 +7,8 @@
 import type { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { ClaudeSubprocess } from "../subprocess/manager.js";
-import { openaiToCli } from "../adapter/openai-to-cli.js";
+import { openaiToCli, wantsToolCalls } from "../adapter/openai-to-cli.js";
+import { parseToolCalls, extractJsonContent } from "../adapter/tools.js";
 import {
   cliResultToOpenai,
   createDoneChunk,
@@ -63,11 +64,14 @@ export async function handleChatCompletions(
     // Convert to CLI input format
     const cliInput = openaiToCli(body);
     const subprocess = new ClaudeSubprocess();
+    const parseTools = wantsToolCalls(body);
+    const rf = body.response_format?.type;
+    const jsonMode = rf === "json_object" || rf === "json_schema";
 
     if (stream) {
-      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime);
+      await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode);
     } else {
-      await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel, startTime);
+      await handleNonStreamingResponse(res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -108,8 +112,13 @@ async function handleStreamingResponse(
   cliInput: ReturnType<typeof openaiToCli>,
   requestId: string,
   requestedModel: string,
-  startTime: number
+  startTime: number,
+  parseTools: boolean,
+  jsonMode: boolean
 ): Promise<void> {
+  // Tool calls and JSON mode require the full reply before we can shape it,
+  // so we buffer instead of streaming raw deltas in those cases.
+  const buffer = parseTools || jsonMode;
   // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -137,27 +146,35 @@ async function handleStreamingResponse(
       resolve();
     });
 
+    const created = () => Math.floor(Date.now() / 1000);
+    const sendChunk = (choice: object) => {
+      res.write(
+        `data: ${JSON.stringify({
+          id: `chatcmpl-${requestId}`,
+          object: "chat.completion.chunk",
+          created: created(),
+          model: requestedModel,
+          choices: [choice],
+        })}\n\n`
+      );
+    };
+
     // Handle streaming content deltas. Only forward visible text — never
     // thinking_delta (extended-thinking) content, which has no `.text`.
+    //
+    // When tools are in play we cannot stream raw text: the reply may be a
+    // tool-call JSON block that must come back as tool_calls, not content. So
+    // we buffer and decide once the full result arrives.
     subprocess.on("content_delta", (event: ClaudeCliStreamEvent) => {
+      if (buffer) return; // buffered; handled in "result"
       const delta = event.event.delta;
       const text = delta?.type === "text_delta" ? delta.text || "" : "";
       if (text && !res.writableEnded) {
-        const chunk = {
-          id: `chatcmpl-${requestId}`,
-          object: "chat.completion.chunk",
-          created: Math.floor(Date.now() / 1000),
-          model: requestedModel,
-          choices: [{
-            index: 0,
-            delta: {
-              role: isFirst ? "assistant" : undefined,
-              content: text,
-            },
-            finish_reason: null,
-          }],
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        sendChunk({
+          index: 0,
+          delta: { role: isFirst ? "assistant" : undefined, content: text },
+          finish_reason: null,
+        });
         isFirst = false;
       }
     });
@@ -183,9 +200,39 @@ async function handleStreamingResponse(
       });
 
       if (!res.writableEnded) {
-        // Send final done chunk with finish_reason
-        const doneChunk = createDoneChunk(requestId, lastModel);
-        res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
+        const toolCalls = parseTools ? parseToolCalls(result.result) : null;
+
+        if (toolCalls && toolCalls.length > 0) {
+          // Emit the tool calls in one delta, then close with tool_calls.
+          sendChunk({
+            index: 0,
+            delta: {
+              role: "assistant",
+              tool_calls: toolCalls.map((c, i) => ({
+                index: i,
+                id: c.id,
+                type: "function",
+                function: { name: c.function.name, arguments: c.function.arguments },
+              })),
+            },
+            finish_reason: null,
+          });
+          sendChunk({ index: 0, delta: {}, finish_reason: "tool_calls" });
+        } else {
+          // Buffered (tools or JSON mode) with no tool call -> emit text now.
+          if (buffer) {
+            const text = jsonMode ? extractJsonContent(result.result) : result.result;
+            if (text) {
+              sendChunk({
+                index: 0,
+                delta: { role: "assistant", content: text },
+                finish_reason: null,
+              });
+            }
+          }
+          const doneChunk = createDoneChunk(requestId, lastModel);
+          res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
+        }
         res.write("data: [DONE]\n\n");
         res.end();
       }
@@ -251,7 +298,9 @@ async function handleNonStreamingResponse(
   cliInput: ReturnType<typeof openaiToCli>,
   requestId: string,
   requestedModel: string,
-  startTime: number
+  startTime: number,
+  parseTools: boolean,
+  jsonMode: boolean
 ): Promise<void> {
   return new Promise((resolve) => {
     let finalResult: ClaudeCliResult | null = null;
@@ -296,7 +345,13 @@ async function handleNonStreamingResponse(
           success: true,
         });
 
-        res.json(cliResultToOpenai(finalResult, requestId, requestedModel));
+        const toolCalls = parseTools ? parseToolCalls(finalResult.result) : null;
+        if (jsonMode && !toolCalls) {
+          finalResult.result = extractJsonContent(finalResult.result);
+        }
+        res.json(
+          cliResultToOpenai(finalResult, requestId, requestedModel, toolCalls || undefined)
+        );
       } else if (!res.headersSent) {
         usageTracker.record({
           model: requestedModel,

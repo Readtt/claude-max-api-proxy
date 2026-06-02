@@ -87,6 +87,41 @@ describe("messagesToPrompt", () => {
     assert.ok(result.includes("First"));
     assert.ok(result.includes("Second"));
   });
+
+  it("renders assistant tool_calls into the prompt", () => {
+    const result = messagesToPrompt([
+      { role: "user", content: "weather in Paris?" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+          },
+        ],
+      },
+    ]);
+    assert.ok(result.includes("```tool_calls"));
+    assert.ok(result.includes("get_weather"));
+    assert.ok(result.includes("Paris"));
+  });
+
+  it("renders tool result messages", () => {
+    const result = messagesToPrompt([
+      { role: "user", content: "weather?" },
+      {
+        role: "tool",
+        tool_call_id: "call_1",
+        name: "get_weather",
+        content: "Sunny, 21C",
+      },
+    ]);
+    assert.ok(result.includes("<tool_result"));
+    assert.ok(result.includes('tool_call_id="call_1"'));
+    assert.ok(result.includes("Sunny, 21C"));
+  });
 });
 
 describe("extractSystemPrompt", () => {
