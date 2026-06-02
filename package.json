@@ -1,5 +1,5 @@
 {
-  "name": "claude-max-api-proxy",
+  "name": "@readtt/claude-max-api-proxy",
   "version": "1.5.0",
   "description": "Use your Claude Max subscription with any OpenAI-compatible client. Wraps Claude Code CLI as an OpenAI-compatible API server.",
   "type": "module",
@@ -31,6 +31,9 @@
   ],
   "author": "Atal Ashutosh",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Readtt/claude-max-api-proxy"
