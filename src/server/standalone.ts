@@ -1,73 +1,72 @@
 #!/usr/bin/env node
 /**
- * Standalone server for testing without Clawdbot
+ * Standalone server entry point (run without Clawdbot).
  *
  * Usage:
  *   npm run start
- *   # or
  *   node dist/server/standalone.js [port]
+ *
+ * All output goes through the shared logger (set LOG_LEVEL=debug for detail).
  */
 
 import { startServer, stopServer } from "./index.js";
 import { verifyClaude, verifyAuth } from "../subprocess/manager.js";
+import { createLogger } from "../logger.js";
 
+const log = createLogger("cli");
 const DEFAULT_PORT = 3456;
 
-async function main(): Promise<void> {
-  console.log("Claude Code CLI Provider - Standalone Server");
-  console.log("============================================\n");
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
-  // Parse port from command line
+async function main(): Promise<void> {
+  // Parse port from the command line.
   const port = parseInt(process.argv[2] || String(DEFAULT_PORT), 10);
   if (isNaN(port) || port < 1 || port > 65535) {
-    console.error(`Invalid port: ${process.argv[2]}`);
+    log.error("invalid port", { value: process.argv[2] });
     process.exit(1);
   }
 
-  // Verify Claude CLI
-  console.log("Checking Claude CLI...");
+  // Verify the Claude CLI is installed.
+  log.info("checking claude cli");
   const cliCheck = await verifyClaude();
   if (!cliCheck.ok) {
-    console.error(`Error: ${cliCheck.error}`);
+    log.error("claude cli not found", { error: cliCheck.error });
     process.exit(1);
   }
-  console.log(`  Claude CLI: ${cliCheck.version || "OK"}`);
+  log.info("claude cli ok", { version: cliCheck.version });
 
-  // Verify authentication
-  console.log("Checking authentication...");
+  // Verify authentication.
   const authCheck = await verifyAuth();
   if (!authCheck.ok) {
-    console.error(`Error: ${authCheck.error}`);
-    console.error("Please run: claude auth login");
+    log.error("not authenticated", {
+      error: authCheck.error,
+      hint: "run `claude` once to log in",
+    });
     process.exit(1);
   }
-  console.log("  Authentication: OK\n");
 
-  // Start server
+  // Start the server (it logs "listening" with the endpoint URL).
   try {
     await startServer({ port });
-    console.log("\nServer ready. Test with:");
-    console.log(`  curl -X POST http://localhost:${port}/v1/chat/completions \\`);
-    console.log(`    -H "Content-Type: application/json" \\`);
-    console.log(`    -d '{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello!"}]}'`);
-    console.log("\nPress Ctrl+C to stop.\n");
+    log.info("ready", { test: `curl http://localhost:${port}/v1/models` });
   } catch (err) {
-    console.error("Failed to start server:", err);
+    log.error("failed to start server", { error: errMessage(err) });
     process.exit(1);
   }
 
-  // Handle graceful shutdown
+  // Graceful shutdown.
   const shutdown = async () => {
-    console.log("\nShutting down...");
+    log.info("shutting down");
     await stopServer();
     process.exit(0);
   };
-
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {
-  console.error("Unexpected error:", err);
+  log.error("unexpected error", { error: errMessage(err) });
   process.exit(1);
 });

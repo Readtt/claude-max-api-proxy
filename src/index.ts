@@ -202,7 +202,7 @@ const claudeCodeCliPlugin = {
         .action(async (port: string) => {
           const p = parseInt(port || String(DEFAULT_PORT), 10);
           await startServer({ port: p });
-          console.log(`Server started on port ${p}`);
+          log.info("server started", { port: p });
         });
 
       cli
@@ -210,7 +210,7 @@ const claudeCodeCliPlugin = {
         .description("Stop the Claude CLI proxy server")
         .action(async () => {
           await stopServer();
-          console.log("Server stopped");
+          log.info("server stopped");
         });
 
       cli
@@ -218,11 +218,10 @@ const claudeCodeCliPlugin = {
         .description("Check Claude CLI proxy server status")
         .action(() => {
           const server = getServer();
-          if (server) {
-            console.log(`Server is running on port ${serverPort}`);
-          } else {
-            console.log("Server is not running");
-          }
+          log.info("server status", {
+            running: !!server,
+            port: server ? serverPort : undefined,
+          });
         });
     });
 
