@@ -16,6 +16,17 @@ Use your **Claude Max** subscription as an **OpenAI-compatible API**. Any OpenAI
 
 ## Run it
 
+**Install from npm** (quickest):
+
+```bash
+npm install -g @readtt/claude-max-api-proxy
+claude-max-api            # starts on http://localhost:3456
+```
+
+To use a different port: `claude-max-api 8080`.
+
+**Or run from source:**
+
 ```bash
 git clone https://github.com/Readtt/claude-max-api-proxy.git
 cd claude-max-api-proxy
@@ -23,13 +34,11 @@ npm install
 npm run serve     # builds, then starts on http://localhost:3456
 ```
 
-That's it. Quick check:
+Either way, quick check:
 
 ```bash
 curl http://localhost:3456/v1/models
 ```
-
-To use a different port: `node dist/server/standalone.js 8080`.
 
 ## Use it
 
