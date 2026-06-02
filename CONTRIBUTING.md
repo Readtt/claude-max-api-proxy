@@ -1,57 +1,32 @@
-# Contributing to Claude Code CLI Provider
+# Contributing
 
-Thank you for your interest in contributing!
+Thanks for helping out!
 
-## Development Setup
-
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Build: `npm run build`
-4. Run: `node dist/server/standalone.js`
-
-## Making Changes
-
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Make your changes
-3. Build and test: `npm run build`
-4. Commit with a descriptive message
-5. Push and create a PR
-
-## Code Style
-
-- TypeScript with strict mode
-- Use `spawn()` instead of shell execution for security
-- Add JSDoc comments to public functions
-- Keep functions focused and small
-
-## Testing
-
-Test your changes with:
+## Setup
 
 ```bash
-# Start the server
-node dist/server/standalone.js
-
-# Test non-streaming
-curl -X POST http://localhost:3456/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-haiku-4", "messages": [{"role": "user", "content": "Hi"}]}'
-
-# Test streaming
-curl -N -X POST http://localhost:3456/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-haiku-4", "messages": [{"role": "user", "content": "Hi"}], "stream": true}'
+npm install
+npm run build
+npm test            # builds + runs the unit tests
+npm run serve       # build + start on http://localhost:3456
 ```
 
-## Reporting Issues
+## Pull requests
 
-Please include:
-- Node.js version (`node --version`)
-- Claude CLI version (`claude --version`)
-- Operating system
-- Steps to reproduce
-- Error messages/logs
+1. Branch off `main`.
+2. Make the change and add/adjust tests in `src/**/*.test.ts`.
+3. Make sure `npm test` passes.
+4. Open a PR with a clear description.
 
-## License
+## Conventions
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+- TypeScript, strict mode.
+- Use `spawn()` (never a shell) for subprocesses.
+- Keep prompt and system-prompt content **off the command line** (stdin / temp
+  file) — see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Bug reports
+
+Include `node --version`, `claude --version`, your OS, repro steps, and logs.
+
+Contributions are licensed under MIT.
