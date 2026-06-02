@@ -13,6 +13,9 @@ import {
   type ModelFamily,
   type ProxyModel,
 } from "./models.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("plugin");
 
 // Provider constants
 const PROVIDER_ID = "claude-code-cli";
@@ -186,7 +189,7 @@ const claudeCodeCliPlugin = {
     api.on("plugin:unload", async () => {
       const server = getServer();
       if (server) {
-        console.log("[ClaudeCodeCLI] Stopping server on plugin unload");
+        log.info("stopping server on plugin unload");
         await stopServer();
       }
     });
@@ -223,7 +226,7 @@ const claudeCodeCliPlugin = {
         });
     });
 
-    console.log("[ClaudeCodeCLI] Plugin registered");
+    log.info("plugin registered");
   },
 };
 

@@ -112,7 +112,8 @@ All optional, set as environment variables:
 | `API_KEYS` | _(unset)_ | Comma-separated Bearer tokens to require (see above). |
 | `CLAUDE_PROXY_MODELS` | _(unset)_ | Extra pinned model IDs to list in `/v1/models`. |
 | `SYSTEM_PROMPT_MODE` | `replace` | `replace` = your system prompt fully defines the persona (neutral, OpenAI-like). `append` = add it on top of Claude Code's default prompt. |
-| `DEBUG` | _(unset)_ | Log each request method + path. |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, or `debug`. `info` logs each request/response (model, duration, tokens); `debug` adds per-chunk subprocess detail. |
+| `DEBUG` | _(unset)_ | Legacy alias — any value forces `LOG_LEVEL=debug`. |
 
 ## Notes
 

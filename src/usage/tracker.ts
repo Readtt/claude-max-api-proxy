@@ -7,6 +7,9 @@
 
 import fs from "fs/promises";
 import path from "path";
+import { createLogger } from "../logger.js";
+
+const log = createLogger("usage");
 
 export interface RequestRecord {
   timestamp: number;
@@ -211,7 +214,7 @@ export class UsageTracker {
         records: this.records,
       }, null, 2));
     } catch (err) {
-      console.error("[UsageTracker] Save error:", err);
+      log.error("save failed", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 }
@@ -221,5 +224,5 @@ export const usageTracker = new UsageTracker();
 
 // Initialize on load
 usageTracker.load().catch(err =>
-  console.error("[UsageTracker] Load error:", err)
+  log.error("load failed", { error: err instanceof Error ? err.message : String(err) })
 );

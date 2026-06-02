@@ -20,6 +20,9 @@ import type { OpenAIChatRequest } from "../types/openai.js";
 import type { ClaudeCliAssistant, ClaudeCliResult, ClaudeCliStreamEvent } from "../types/claude-cli.js";
 import { usageTracker } from "../usage/tracker.js";
 import { isAuthEnabled } from "./auth.js";
+import { createLogger } from "../logger.js";
+
+const log = createLogger("api");
 
 // Read the version from package.json at runtime so /health never drifts from
 // the published version. routes.js lives at dist/server/, so ../../ is the root.
@@ -98,6 +101,18 @@ export async function handleChatCompletions(
     const rf = body.response_format?.type;
     const jsonMode = rf === "json_object" || rf === "json_schema";
 
+    log.info("chat request", {
+      requestId,
+      model: requestedModel,
+      resolvedModel: cliInput.model,
+      stream,
+      messages: body.messages.length,
+      tools: parseTools || undefined,
+      jsonMode: jsonMode || undefined,
+      effort: cliInput.reasoningEffort,
+      images: cliInput.images?.length,
+    });
+
     if (stream) {
       await handleStreamingResponse(req, res, subprocess, cliInput, requestId, requestedModel, startTime, parseTools, jsonMode, includeUsage);
     } else {
@@ -105,7 +120,7 @@ export async function handleChatCompletions(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[handleChatCompletions] Error:", message);
+    log.error("chat request failed", { requestId, error: message });
 
     usageTracker.record({
       model: requestedModel,
@@ -250,6 +265,16 @@ async function handleStreamingResponse(
         success: true,
       });
 
+      log.info("chat response", {
+        requestId,
+        stream: true,
+        status: "ok",
+        durationMs: Date.now() - startTime,
+        inputTokens: result.usage?.input_tokens || 0,
+        outputTokens: result.usage?.output_tokens || 0,
+        stopReason: result.stop_reason,
+      });
+
       if (!res.writableEnded) {
         const toolCalls = parseTools ? parseToolCalls(result.result) : null;
 
@@ -296,7 +321,7 @@ async function handleStreamingResponse(
     });
 
     subprocess.on("error", (error: Error) => {
-      console.error("[Streaming] Error:", error.message);
+      log.error("stream error", { requestId, error: error.message });
 
       usageTracker.record({
         model: requestedModel,
@@ -340,7 +365,7 @@ async function handleStreamingResponse(
       reasoningEffort: cliInput.reasoningEffort,
       images: cliInput.images,
     }).catch((err) => {
-      console.error("[Streaming] Subprocess start error:", err);
+      log.error("subprocess start failed", { requestId, error: err?.message || String(err) });
       reject(err);
     });
   });
@@ -367,7 +392,7 @@ async function handleNonStreamingResponse(
     });
 
     subprocess.on("error", (error: Error) => {
-      console.error("[NonStreaming] Error:", error.message);
+      log.error("request error", { requestId, error: error.message });
 
       usageTracker.record({
         model: requestedModel,
@@ -400,6 +425,16 @@ async function handleNonStreamingResponse(
           durationMs: Date.now() - startTime,
           stream: false,
           success: true,
+        });
+
+        log.info("chat response", {
+          requestId,
+          stream: false,
+          status: "ok",
+          durationMs: Date.now() - startTime,
+          inputTokens: finalResult.usage?.input_tokens || 0,
+          outputTokens: finalResult.usage?.output_tokens || 0,
+          stopReason: finalResult.stop_reason,
         });
 
         const toolCalls = parseTools ? parseToolCalls(finalResult.result) : null;

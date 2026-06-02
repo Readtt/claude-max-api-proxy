@@ -8,6 +8,9 @@ import express, { Express, Request, Response, NextFunction } from "express";
 import { createServer, Server } from "http";
 import { handleChatCompletions, handleModels, handleModel, handleHealth, handleUsage, handleUsageRecent } from "./routes.js";
 import { initAuth, authMiddleware } from "./auth.js";
+import { createLogger, currentLevel } from "../logger.js";
+
+const log = createLogger("server");
 
 export interface ServerConfig {
   port: number;
@@ -25,17 +28,15 @@ function createApp(): Express {
   // Initialize auth
   const authStatus = initAuth();
   if (authStatus.enabled) {
-    console.log(`[Server] API key auth enabled (${authStatus.keyCount} key(s))`);
+    log.info("api key auth enabled", { keys: authStatus.keyCount });
   }
 
   // Middleware
   app.use(express.json({ limit: "10mb" }));
 
-  // Request logging (debug mode)
+  // Per-request access logging (debug level)
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    if (process.env.DEBUG) {
-      console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    }
+    log.debug("request", { method: req.method, path: req.path });
     next();
   });
 
@@ -76,7 +77,7 @@ function createApp(): Express {
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error("[Server Error]:", err.message);
+    log.error("unhandled error", { error: err.message });
     res.status(500).json({
       error: {
         message: err.message,
@@ -96,7 +97,7 @@ export async function startServer(config: ServerConfig): Promise<Server> {
   const { port, host = "127.0.0.1" } = config;
 
   if (serverInstance) {
-    console.log("[Server] Already running, returning existing instance");
+    log.warn("server already running, returning existing instance");
     return serverInstance;
   }
 
@@ -114,9 +115,11 @@ export async function startServer(config: ServerConfig): Promise<Server> {
     });
 
     serverInstance.listen(port, host, () => {
-      console.log(`[Server] Claude Code CLI provider running at http://${host}:${port}`);
-      console.log(`[Server] OpenAI-compatible endpoint: http://${host}:${port}/v1/chat/completions`);
-      console.log(`[Server] Usage dashboard: http://${host}:${port}/v1/usage`);
+      log.info("listening", {
+        url: `http://${host}:${port}`,
+        endpoint: `http://${host}:${port}/v1/chat/completions`,
+        logLevel: currentLevel(),
+      });
       resolve(serverInstance!);
     });
   });
@@ -135,7 +138,7 @@ export async function stopServer(): Promise<void> {
       if (err) {
         reject(err);
       } else {
-        console.log("[Server] Stopped");
+        log.info("stopped");
         serverInstance = null;
         resolve();
       }

@@ -23,6 +23,9 @@ import type {
   AnthropicImageBlock,
   ReasoningEffort,
 } from "../adapter/openai-to-cli.js";
+import { createLogger } from "../logger.js";
+
+const log = createLogger("subprocess");
 
 export interface SubprocessOptions {
   model: ClaudeModel;
@@ -163,12 +166,12 @@ export class ClaudeSubprocess extends EventEmitter {
         }
         this.process.stdin?.end();
 
-        console.error(`[Subprocess] Process spawned with PID: ${this.process.pid}`);
+        log.debug("spawned", { pid: this.process.pid, model: options.model });
 
         // Parse JSON stream from stdout
         this.process.stdout?.on("data", (chunk: Buffer) => {
           const data = chunk.toString();
-          console.error(`[Subprocess] Received ${data.length} bytes of stdout`);
+          log.debug("stdout chunk", { bytes: data.length });
           this.buffer += data;
           this.processBuffer();
         });
@@ -179,15 +182,15 @@ export class ClaudeSubprocess extends EventEmitter {
           const errorText = chunk.toString().trim();
           if (errorText) {
             this.lastStderr = errorText.slice(0, 500);
-            // Don't emit as error unless it's actually an error
-            // Claude CLI may write debug info to stderr
-            console.error("[Subprocess stderr]:", errorText.slice(0, 200));
+            // The CLI also writes non-fatal debug info to stderr, so log at
+            // debug — the real cause of a failure is surfaced via getLastStderr.
+            log.debug("stderr", { text: errorText.slice(0, 200) });
           }
         });
 
         // Handle process close
         this.process.on("close", (code) => {
-          console.error(`[Subprocess] Process closed with code: ${code}`);
+          log.debug("closed", { code });
           this.clearTimeout();
           this.cleanupSystemPromptFile();
           // Process any remaining buffer
