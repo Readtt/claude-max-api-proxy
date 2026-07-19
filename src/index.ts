@@ -26,6 +26,7 @@ const DEFAULT_MODEL = `${PROVIDER_ID}/${DEFAULT_MODEL_ALIAS}`;
 
 const FAMILY_LABELS: Record<ModelFamily, string> = {
   opus: "Claude Opus (latest)",
+  fable: "Claude Fable (latest)",
   sonnet: "Claude Sonnet (latest)",
   haiku: "Claude Haiku (latest)",
 };

@@ -37,8 +37,8 @@ OpenAI client
 ## Models, and why the list never goes stale
 
 `src/models.ts` is the only place that knows about models. It advertises the
-three evergreen family aliases (`opus`/`sonnet`/`haiku`), which the CLI resolves
-to the latest version in each family, plus any pinned IDs from
+evergreen family aliases (`opus`/`fable`/`sonnet`/`haiku`), which the CLI
+resolves to the latest version in each family, plus any pinned IDs from
 `CLAUDE_PROXY_MODELS`. Clients can also pin a full version ID per request
 (`claude-opus-4-8`), passed straight through. New Claude releases therefore need
 no code change. `/v1/models`, `/v1/models/{id}`, and the Clawdbot plugin all read

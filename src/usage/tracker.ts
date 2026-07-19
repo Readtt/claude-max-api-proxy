@@ -46,6 +46,7 @@ export interface UsageSummary {
 
 // Anthropic API pricing (per million tokens)
 const PRICING: Record<string, { input: number; output: number }> = {
+  fable:  { input: 10.00, output: 50.00 },
   opus:   { input: 15.00, output: 75.00 },
   sonnet: { input: 3.00,  output: 15.00 },
   haiku:  { input: 0.25,  output: 1.25  },
@@ -100,7 +101,8 @@ export class UsageTracker {
   }): void {
     const cliModel = entry.model.toLowerCase();
     let pricingKey = "sonnet";
-    if (cliModel.includes("opus")) pricingKey = "opus";
+    if (cliModel.includes("fable")) pricingKey = "fable";
+    else if (cliModel.includes("opus")) pricingKey = "opus";
     else if (cliModel.includes("haiku")) pricingKey = "haiku";
 
     const pricing = PRICING[pricingKey];

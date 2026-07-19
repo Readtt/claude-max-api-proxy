@@ -27,7 +27,7 @@ available.
 
 | Field | Status | Notes |
 |-------|--------|-------|
-| `model` | ✅ | Family alias (`opus`/`sonnet`/`haiku`) → latest; full ID (`claude-opus-4-7`) pins that version. See [README](README.md#models). |
+| `model` | ✅ | Family alias (`opus`/`fable`/`sonnet`/`haiku`) → latest; full ID (`claude-opus-4-7`) pins that version. See [README](README.md#models). |
 | `messages` | ✅ | `system`, `developer`, `user`, `assistant`, `tool`/`function` roles all handled. |
 | `stream` | ✅ | SSE token streaming. |
 | `tools`, `tool_choice` | ✅ *Emulated* | OpenAI function calling. See below. |

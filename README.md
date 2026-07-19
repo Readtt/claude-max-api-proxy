@@ -70,16 +70,16 @@ client.chat.completions.create(
 Two ways to choose a model, so you never have to update the proxy for new
 releases:
 
-- **Latest in a family** — use a bare alias: `opus`, `sonnet`, or `haiku`
-  (also matched in any name, e.g. `claude-opus-4` → latest Opus).
+- **Latest in a family** — use a bare alias: `opus`, `fable`, `sonnet`, or
+  `haiku` (also matched in any name, e.g. `claude-opus-4` → latest Opus).
 - **Pin a specific version** — use the full ID and it's passed straight to the
-  CLI: `claude-opus-4-7`, `claude-sonnet-4-5-20250929`, etc. Availability
-  depends on your subscription.
+  CLI: `claude-opus-4-7`, `claude-sonnet-4-5-20250929`, `claude-fable-5`, etc.
+  Availability depends on your subscription.
 
 Provider prefixes are fine too: `anthropic/...`, `claude-max/...`,
 `claude-code-cli/...`. Unknown names default to the latest Opus.
 
-`GET /v1/models` lists the three family aliases (always the latest), so it never
+`GET /v1/models` lists the family aliases (always the latest), so it never
 goes stale. To also advertise specific pinned IDs (e.g. for a UI model picker),
 set `CLAUDE_PROXY_MODELS=claude-opus-4-8,claude-sonnet-4-6`.
 

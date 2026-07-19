@@ -114,6 +114,7 @@ export function cliResultToOpenai(
  * e.g., "claude-sonnet-4-5-20250929" -> "claude-sonnet-4"
  */
 function normalizeModelName(model: string): string {
+  if (model.includes("fable")) return "claude-fable-5";
   if (model.includes("opus")) return "claude-opus-4";
   if (model.includes("sonnet")) return "claude-sonnet-4";
   if (model.includes("haiku")) return "claude-haiku-4";

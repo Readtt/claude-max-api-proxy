@@ -2,12 +2,13 @@
  * Single source of truth for models.
  *
  * The proxy never needs a code change for a new Claude release. Clients either:
- *   - ride the latest model in a family via its alias (`opus`/`sonnet`/`haiku`),
- *     which the CLI resolves to the newest version in that family, or
+ *   - ride the latest model in a family via its alias
+ *     (`opus`/`fable`/`sonnet`/`haiku`), which the CLI resolves to the newest
+ *     version in that family, or
  *   - pin an exact version by full ID (e.g. `claude-opus-4-8`), passed straight
  *     through to the CLI.
  *
- * So `/v1/models` advertises the three evergreen family aliases by default.
+ * So `/v1/models` advertises the evergreen family aliases by default.
  * To additionally advertise specific pinned IDs (e.g. to populate a UI model
  * picker), set `CLAUDE_PROXY_MODELS` to a comma-separated list:
  *   CLAUDE_PROXY_MODELS=claude-opus-4-8,claude-sonnet-4-6
@@ -20,7 +21,7 @@
 /** A value accepted by `claude --model`: a family alias or a full version ID. */
 export type ClaudeModel = string;
 
-export const MODEL_FAMILIES = ["opus", "sonnet", "haiku"] as const;
+export const MODEL_FAMILIES = ["opus", "fable", "sonnet", "haiku"] as const;
 export type ModelFamily = (typeof MODEL_FAMILIES)[number];
 
 /** Default model when a request omits `model`: the evergreen latest Opus. */
@@ -40,11 +41,12 @@ export interface ProxyModel {
 }
 
 // A full, pinnable version ID carries a family + at least major-minor, e.g.
-// claude-opus-4-8 or claude-sonnet-4-5-20250929.
-const CLAUDE_FULL_ID_RE = /^claude-(opus|sonnet|haiku)-\d+-\d+/i;
+// claude-opus-4-8 or claude-sonnet-4-5-20250929. Fable versions with a single
+// number (claude-fable-5) are also full IDs — there is no major-only fable name.
+const CLAUDE_FULL_ID_RE = /^claude-((opus|sonnet|haiku)-\d+-\d+|fable-\d+)/i;
 // Looser "is this a Claude model at all" check (family + a number), used to
 // decide whether GET /v1/models/{id} should resolve an unadvertised ID.
-const CLAUDE_ANY_ID_RE = /^claude-(opus|sonnet|haiku)-\d/i;
+const CLAUDE_ANY_ID_RE = /^claude-(opus|fable|sonnet|haiku)-\d/i;
 
 /** Remove a known provider prefix (`anthropic/…`, etc.) if present. */
 export function stripProviderPrefix(model: string): string {
@@ -63,6 +65,7 @@ export function familyOf(model: string): ModelFamily {
   const lower = stripProviderPrefix(model).toLowerCase();
   if (lower.includes("haiku")) return "haiku";
   if (lower.includes("sonnet")) return "sonnet";
+  if (lower.includes("fable")) return "fable";
   return "opus";
 }
 
@@ -72,8 +75,8 @@ export function familyOf(model: string): ModelFamily {
  *   - A full version ID (family + major-minor, e.g. `claude-opus-4-8`) is passed
  *     through verbatim so the CLI runs that exact version. Provider prefixes are
  *     stripped first.
- *   - Anything else maps to the family alias (`opus`/`sonnet`/`haiku`), which the
- *     CLI resolves to the latest model in that family. This covers bare aliases,
+ *   - Anything else maps to the family alias (`opus`/`fable`/`sonnet`/`haiku`),
+ *     which the CLI resolves to the latest model in that family. This covers bare aliases,
  *     major-only names like `claude-opus-4` (not a valid full ID), and unknown
  *     names (which default to opus).
  */
@@ -94,7 +97,7 @@ function extraModelIds(): string[] {
 }
 
 /**
- * The models the proxy advertises: the three evergreen family aliases first,
+ * The models the proxy advertises: the evergreen family aliases first,
  * then any pinned IDs from CLAUDE_PROXY_MODELS (deduped).
  */
 export function listModels(): ProxyModel[] {

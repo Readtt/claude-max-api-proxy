@@ -489,8 +489,8 @@ async function handleNonStreamingResponse(
 /**
  * Handle GET /v1/models
  *
- * Lists the evergreen family aliases (opus/sonnet/haiku, always the latest in
- * each family) plus any pinned IDs from CLAUDE_PROXY_MODELS. No code change is
+ * Lists the evergreen family aliases (opus/fable/sonnet/haiku, always the latest
+ * in each family) plus any pinned IDs from CLAUDE_PROXY_MODELS. No code change is
  * needed for new model releases — see src/models.ts.
  */
 export function handleModels(_req: Request, res: Response): void {

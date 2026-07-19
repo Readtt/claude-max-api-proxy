@@ -24,7 +24,7 @@ claude --print \
 | `--print` | Non-interactive; print and exit |
 | `--output-format stream-json` | JSON-lines output (requires `--verbose`) |
 | `--include-partial-messages` | Emit streaming text deltas |
-| `--model` | `opus` / `sonnet` / `haiku` alias → latest in family, or a pinned full ID |
+| `--model` | `opus` / `fable` / `sonnet` / `haiku` alias → latest in family, or a pinned full ID |
 | `--effort` | Maps `reasoning_effort` (low/medium/high/xhigh/max) |
 | `--system-prompt-file` | System prompt from a file, not the command line (`--append-system-prompt-file` in `append` mode) |
 | isolation flags | `--setting-sources "" --strict-mcp-config --disable-slash-commands --tools ""` — behave as a pure chat API; never touch host config or run tools |
